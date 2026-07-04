@@ -12,10 +12,68 @@ typedef struct {
   float cell_size;
   float board_offset_x;
   float board_offset_y;
+  Vector2i hovered_cell;
+  int has_hovered_cell;
+  Orientation orientation;
 } NumberFactory;
 
 const int width = 800;
 const int height = 600;
+
+static int screen_to_board_cell(NumberFactory *game, float x, float y,
+                                Vector2i *cell) {
+  float board_x = x - game->board_offset_x;
+  float board_y = y - game->board_offset_y;
+  float board_width = game->cell_size * game->level.board.width;
+  float board_height = game->cell_size * game->level.board.height;
+
+  if (board_x < 0.0f || board_x >= board_width || board_y < 0.0f ||
+      board_y >= board_height) {
+    return 0;
+  }
+
+  cell->x = (int)(board_x / game->cell_size);
+  cell->y = (int)(board_y / game->cell_size);
+  return 1;
+}
+
+static void draw_orientation_arrow(SDL_Renderer *renderer, SDL_FRect cell,
+                                   Orientation orientation) {
+  Vector2i direction = orientation_vector(orientation);
+  Vector2i perpendicular = {.x = -direction.y, .y = direction.x};
+  float block_size = cell.w / 9.0f;
+  float center_x = cell.x + cell.w / 2.0f - block_size / 2.0f -
+                   direction.x * block_size / 2.0f;
+  float center_y = cell.y + cell.h / 2.0f - block_size / 2.0f -
+                   direction.y * block_size / 2.0f;
+  // x is distance forward and y is distance sideways from the shaft.
+  Vector2i blocks[] = {
+      {.x = 3, .y = 0},
+      {.x = 2, .y = -1},
+      {.x = 2, .y = 0},
+      {.x = 2, .y = 1},
+      {.x = 1, .y = -2},
+      {.x = 1, .y = -1},
+      {.x = 1, .y = 0},
+      {.x = 1, .y = 1},
+      {.x = 1, .y = 2},
+      {.x = 0, .y = 0},
+      {.x = -1, .y = 0},
+      {.x = -2, .y = 0},
+  };
+
+  for (int i = 0; i < 12; i++) {
+    int x = blocks[i].x * direction.x + blocks[i].y * perpendicular.x;
+    int y = blocks[i].x * direction.y + blocks[i].y * perpendicular.y;
+    SDL_FRect block = {
+        .x = center_x + x * block_size,
+        .y = center_y + y * block_size,
+        .w = block_size,
+        .h = block_size,
+    };
+    SDL_RenderFillRect(renderer, &block);
+  }
+}
 
 SDL_AppResult SDL_AppInit(void **state, int argc, char *argv[]) {
   (void)argc;
@@ -35,6 +93,7 @@ SDL_AppResult SDL_AppInit(void **state, int argc, char *argv[]) {
   *state = game;
 
   level_init(&game->level);
+  game->orientation = NORTH;
   float cell_width = (float)width / game->level.board.width;
   float cell_height = (float)height / game->level.board.height;
   game->cell_size = cell_width < cell_height ? cell_width : cell_height;
@@ -55,6 +114,7 @@ SDL_AppResult SDL_AppInit(void **state, int argc, char *argv[]) {
     SDL_Log("SDL_CreateWindowAndRenderer failed: %s", SDL_GetError());
     return SDL_APP_FAILURE;
   }
+  SDL_SetRenderDrawBlendMode(game->renderer, SDL_BLENDMODE_BLEND);
 
   return SDL_APP_CONTINUE;
 }
@@ -88,16 +148,55 @@ SDL_AppResult SDL_AppIterate(void *state) {
     }
   }
 
+  if (game->has_hovered_cell) {
+    SDL_FRect preview = {
+        .x = game->board_offset_x + game->hovered_cell.x * game->cell_size,
+        .y = game->board_offset_y + game->hovered_cell.y * game->cell_size,
+        .w = game->cell_size,
+        .h = game->cell_size,
+    };
+    SDL_SetRenderDrawColor(game->renderer, 255, 255, 255, 48);
+    SDL_RenderFillRect(game->renderer, &preview);
+    SDL_SetRenderDrawColor(game->renderer, 255, 255, 255, 192);
+    draw_orientation_arrow(game->renderer, preview, game->orientation);
+  }
+
   SDL_RenderPresent(game->renderer);
 
   return SDL_APP_CONTINUE;
 }
 
 SDL_AppResult SDL_AppEvent(void *state, SDL_Event *event) {
-  (void)state;
+  NumberFactory *game = state;
 
   if (event->type == SDL_EVENT_QUIT) {
     return SDL_APP_SUCCESS;
+  }
+
+  if (event->type == SDL_EVENT_KEY_DOWN && event->key.key == SDLK_R &&
+      !event->key.repeat) {
+    game->orientation =
+        (Orientation)((game->orientation + 1) % ORIENTATION_COUNT);
+  }
+
+  if (event->type == SDL_EVENT_MOUSE_MOTION) {
+    game->has_hovered_cell = screen_to_board_cell(
+        game, event->motion.x, event->motion.y, &game->hovered_cell);
+  } else if (event->type == SDL_EVENT_WINDOW_MOUSE_LEAVE) {
+    game->has_hovered_cell = 0;
+  }
+
+  if (event->type == SDL_EVENT_MOUSE_BUTTON_DOWN &&
+      (event->button.button == SDL_BUTTON_LEFT ||
+       event->button.button == SDL_BUTTON_RIGHT)) {
+    Vector2i cell;
+    if (screen_to_board_cell(game, event->button.x, event->button.y, &cell)) {
+      if (event->button.button == SDL_BUTTON_LEFT) {
+        level_place_pipe(&game->level, cell, game->orientation);
+      } else {
+        level_remove(&game->level, cell);
+      }
+    }
   }
 
   return SDL_APP_CONTINUE;
