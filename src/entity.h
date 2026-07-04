@@ -34,4 +34,6 @@ EntityId entity_create(EntityPool *pool, Entity entity);
 
 void entity_destroy(EntityPool *pool, EntityId id);
 
+#define ENTITY_AT(pool, id) (&(pool)->buffer[id])
+
 #endif

@@ -38,4 +38,8 @@ int pipe_feed(Pipe *pipe, Vector2i pos, int value);
 // Returns the value that was just output, or 0 if none.
 int pipe_update(Pipe *pipe, float dt);
 
+// Gets the orientation of the pipe at the given position.
+// If the pipe has a single cell, or the operation fails, returns -1.
+Orientation pipe_orientation(Pipe *pipe, Vector2i pos);
+
 #endif

@@ -103,3 +103,20 @@ int pipe_update(Pipe *pipe, float dt) {
 
   return value;
 }
+
+Orientation pipe_orientation(Pipe *pipe, Vector2i pos) {
+  int index = position_to_index(pipe, pos);
+  if (index < 0) {
+    fprintf(stderr, "pipe_orientation: position not found\n");
+    return -1;
+  }
+  if (pipe->length == 1) {
+    return -1;
+  }
+
+  if (index == pipe->length - 1) {
+    index -= 1;
+  }
+
+  return vector_orientation(vector_subtract(pipe->positions[index + 1], pipe->positions[index]));
+}

@@ -15,5 +15,6 @@ void board_init(Board *board, int width, int height);
 void board_free(Board *board);
 
 #define BOARD_AT(board, x, y) ((board)->entities[(y) * (board)->width + (x)])
+#define BOARD_VALID(board, x, y) ((x) >= 0 && (x) < (board)->width && (y) >= 0 && (y) < (board)->height)
 
 #endif
