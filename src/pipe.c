@@ -73,6 +73,17 @@ int pipe_extend_output(Pipe *pipe, Vector2i pos, Orientation orientation) {
   return 1;
 }
 
+int pipe_contract_input(Pipe *pipe) {
+  if (pipe->cells.size == 0) {
+    return 0;
+  }
+  pipe_cell_deque_pop_front(&pipe->cells);
+  for (int i = 0; i < pipe->items.size; i++) {
+    DEQUE_AT(pipe->items, i).distance_from_start -= 1.0f;
+  }
+  return 1;
+}
+
 int pipe_merge(Pipe *input, Pipe *output, Pipe *result) {
   // Input pipe needs to point into the output pipe's first cell.
   if (!is_position_adjacent(DEQUE_AT(input->cells, input->cells.size - 1).pos,

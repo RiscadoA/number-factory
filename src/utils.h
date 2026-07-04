@@ -7,6 +7,7 @@
 #define DEQUE(type) struct { type *buffer; int count; int capacity; int begin; }
 
 typedef enum {
+  ORIENTATION_INVALID = -1,
   ORIENTATION_ZERO,
 
   NORTH = ORIENTATION_ZERO,

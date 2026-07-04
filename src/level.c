@@ -80,14 +80,12 @@ int level_place_pipe(Level *level, Vector2i pos, Orientation orientation) {
     }
   }
 
-  // Points to the entity that the cell was added to, if any
-  Entity *current_entity = NULL;
+  // Entity ID that the cell was added to, if any
+  EntityId current_id = ENTITY_NONE;
 
   // If we have an output entity, start by extending it with the current
   // position
   if (output_entity) {
-    pipe_debug(&output_entity->pipe);
-
     int is_start = pipe_is_start_cell(&output_entity->pipe, output_position);
     int is_aligned =
         orientation == pipe_orientation(&output_entity->pipe, output_position);
@@ -95,8 +93,6 @@ int level_place_pipe(Level *level, Vector2i pos, Orientation orientation) {
     // If the output position is a turn cell, disconnect it from any existing
     // inputs
     if (pipe_is_turn_cell(&output_entity->pipe, output_position)) {
-      fprintf(stderr, "Disconnecting turn cell at (%d, %d)\n", pos.x, pos.y);
-
       Pipe old_input_pipe, new_pipe;
       pipe_split(&output_entity->pipe, output_position, &old_input_pipe,
                  &new_pipe);
@@ -117,56 +113,113 @@ int level_place_pipe(Level *level, Vector2i pos, Orientation orientation) {
     // If we're the output position is the start cell of its pipe, or we're
     // aligned with its orientation, extend the pipe
     if (is_start || is_aligned) {
-      fprintf(stderr, "Extending existing pipe at (%d, %d)\n", pos.x, pos.y);
-
       pipe_extend_input(&output_entity->pipe, pos, orientation);
-      current_entity = output_entity;
-      BOARD_AT(&level->board, pos.x, pos.y) = output_id;
+      current_id = output_id;
     }
   }
 
-  // If we have an aligned input pipe
+  // Pick one input pipe to connect to
+  Orientation picked_input;
   if (input_entities[orientation_opposite(orientation)]) {
-    // TODO:  connect it to the output pipe
-    fprintf(stderr, "Unimplemented\n");
-    return 0;
+    picked_input = orientation_opposite(orientation);
   } else if (input_count == 1) {
-    // TODO: If we have a single input pipe, connect it to the output pipe
-    fprintf(stderr, "Unimplemented\n");
-    return 0;
+    for (picked_input = ORIENTATION_ZERO; picked_input < ORIENTATION_COUNT;
+         ++picked_input) {
+      if (input_entities[picked_input]) {
+        break;
+      }
+    }
+  } else {
+    picked_input = ORIENTATION_INVALID;
+  }
+
+  // Connect to it
+  if (picked_input >= 0) {
+    Entity *input_entity = input_entities[picked_input];
+    if (current_id) {
+      // We have a pipe already, merge the two
+      Entity *current_entity = ENTITY_AT(&level->entity_pool, current_id);
+
+      for (int i = 0; i < input_entity->pipe.cells.size; ++i) {
+        Vector2i cell = DEQUE_AT(input_entity->pipe.cells, i).pos;
+        BOARD_AT(&level->board, cell.x, cell.y) = current_id;
+      }
+
+      Pipe new_pipe;
+      pipe_merge(&input_entity->pipe, &current_entity->pipe, &new_pipe);
+      pipe_free(&input_entity->pipe);
+      pipe_free(&current_entity->pipe);
+      current_entity->pipe = new_pipe;
+      entity_destroy(&level->entity_pool, input_ids[picked_input]);
+    } else {
+      pipe_extend_output(&input_entity->pipe, pos, orientation);
+      current_id = input_ids[picked_input];
+    }
   }
 
   // If we weren't able to connect into an existing pipe, create a new one
-  if (!current_entity) {
-    fprintf(stderr, "Creating new pipe at (%d, %d)\n", pos.x, pos.y);
+  if (!current_id) {
     Pipe pipe;
     pipe_init(&pipe, 1);
     pipe_extend_input(&pipe, pos, orientation);
-    EntityId id = entity_create(&level->entity_pool, (Entity){
-                                                         .type = ENTITY_PIPE,
-                                                         .pipe = pipe,
-                                                     });
-    BOARD_AT(&level->board, pos.x, pos.y) = id;
+    current_id = entity_create(&level->entity_pool, (Entity){
+                                                        .type = ENTITY_PIPE,
+                                                        .pipe = pipe,
+                                                    });
   }
 
-  // ======== Connection patterns ========
-  //
-  // --------- Output direction ---------
-  //
-  // a) Pointing at a pipe with no inputs (not pointing to us) -> connect to it
-  // b) Pointing at an aligned pipe -> split target from any existing inputs,
-  // connect to it
-  //
-  // --------- Input direction ----------
-  //
-  // a) Pointed to by a single pipe -> connect to it
-  // b) Pointed to by multiple pipes, one of which is aligned with this pipe ->
-  // connect to aligned pipe
+  BOARD_AT(&level->board, pos.x, pos.y) = current_id;
 
   return 1;
 }
 
 int level_remove(Level *level, Vector2i pos) {
-  fprintf(stderr, "Unimplemented\n");
+  EntityId id = BOARD_AT(&level->board, pos.x, pos.y);
+  if (id == 0) {
+    return 0;
+  }
+
+  Entity *entity = ENTITY_AT(&level->entity_pool, id);
+  if (entity == NULL) {
+    fprintf(stderr, "Entity not found: id=%d\n", id);
+    return 0;
+  }
+
+  switch (entity->type) {
+  case ENTITY_PIPE:
+    BOARD_AT(&level->board, pos.x, pos.y) = ENTITY_NONE;
+    if (entity->pipe.cells.size == 1) {
+      entity_destroy(&level->entity_pool, id);
+    } else {
+      // Split the pipe into two pipes and remove this cell
+      Pipe result_input, result_output;
+      pipe_split(&entity->pipe, pos, &result_input, &result_output);
+      pipe_contract_input(&result_output);
+
+      // Reuse the existing pipe entity for the output side
+      pipe_free(&entity->pipe);
+      entity->pipe = result_output;
+
+      // Create a new pipe entity for the input side
+      if (result_input.cells.size > 0) {
+        EntityId input_id =
+            entity_create(&level->entity_pool, (Entity){
+                                                   .type = ENTITY_PIPE,
+                                                   .pipe = result_input,
+                                               });
+        for (int i = 0; i < result_input.cells.size; i++) {
+          PipeCell cell = DEQUE_AT(result_input.cells, i);
+          BOARD_AT(&level->board, cell.pos.x, cell.pos.y) = input_id;
+        }
+      } else {
+        pipe_free(&result_input);
+      }
+    }
+
+    break;
+  case ENTITY_NONE:
+    break;
+  }
+
   return 0;
 }

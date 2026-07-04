@@ -34,6 +34,8 @@ int pipe_extend_input(Pipe* pipe, Vector2i pos, Orientation orientation);
 
 int pipe_extend_output(Pipe* pipe, Vector2i pos, Orientation orientation);
 
+int pipe_contract_input(Pipe* pipe);
+
 // Connects two pipes together.
 // Pipes must be adjacent to each other, input pipe end targeting output pipe
 // start.
