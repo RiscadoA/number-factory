@@ -21,5 +21,12 @@ endif()
 
 find_package(SDL3 REQUIRED)
 
-add_executable(jam src/main.c)
+add_executable(jam
+  src/main.c
+  src/utils.c
+  src/level.c
+  src/board.c
+  src/entity.c
+  src/pipe.c
+)
 target_link_libraries(jam PRIVATE SDL3::SDL3)
