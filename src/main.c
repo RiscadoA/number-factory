@@ -144,10 +144,68 @@ SDL_AppResult SDL_AppIterate(void *state) {
       };
 
       switch (entity->type) {
-      case ENTITY_PIPE:
-        SDL_SetRenderDrawColor(game->renderer, 0, 0, 255, 255);
-        SDL_RenderFillRect(game->renderer, &rect);
+      case ENTITY_PIPE: {
+        Pipe *pipe = &entity->pipe;
+        // Render the whole pipe only when we hit its start cell (index 0)
+        if (pipe_is_start_cell(pipe, (Vector2i){x, y}) != 1) break;
+        if (pipe->cells.size == 0) break;
+
+        // Distinct color per entity for easy path separation
+        static const uint8_t colors[][3] = {
+            {255, 80, 80},   // Red
+            {80, 255, 80},   // Green
+            {80, 80, 255},   // Blue
+            {255, 255, 80},  // Yellow
+            {255, 80, 255},  // Magenta
+            {80, 255, 255},  // Cyan
+            {255, 160, 80},  // Orange
+            {160, 80, 255},  // Purple
+        };
+        uint8_t r = colors[id % 8][0];
+        uint8_t g = colors[id % 8][1];
+        uint8_t b = colors[id % 8][2];
+
+        float half_cell = game->cell_size * 0.5f;
+        float cs = game->cell_size;
+
+        // Colored marker at each cell center (visible even for 1-cell pipes)
+        SDL_SetRenderDrawColor(game->renderer, r, g, b, 255);
+        float cell_center_pad = cs * 0.3f;
+        for (int i = 0; i < pipe->cells.size; i++) {
+          PipeCell cell = DEQUE_AT(pipe->cells, i);
+          float cx = game->board_offset_x + cell.pos.x * cs + cell_center_pad;
+          float cy = game->board_offset_y + cell.pos.y * cs + cell_center_pad;
+          float size = cs - cell_center_pad * 2.0f;
+          SDL_FRect fill = {cx, cy, size, size};
+          SDL_RenderFillRect(game->renderer, &fill);
+        }
+
+        // Draw lines connecting centers of consecutive cells (the path)
+        for (int i = 0; i < pipe->cells.size - 1; i++) {
+          PipeCell a = DEQUE_AT(pipe->cells, i);
+          PipeCell b = DEQUE_AT(pipe->cells, i + 1);
+          float ax = game->board_offset_x + a.pos.x * cs + half_cell;
+          float ay = game->board_offset_y + a.pos.y * cs + half_cell;
+          float bx = game->board_offset_x + b.pos.x * cs + half_cell;
+          float by = game->board_offset_y + b.pos.y * cs + half_cell;
+          SDL_RenderLine(game->renderer, ax, ay, bx, by);
+        }
+
+        // Short line from center in the pipe's direction at each cell
+        float tick_len = game->cell_size * 0.3f;
+        SDL_SetRenderDrawColor(game->renderer, r, g, b, 255);
+        for (int i = 0; i < pipe->cells.size; i++) {
+          PipeCell cell = DEQUE_AT(pipe->cells, i);
+          float cx = game->board_offset_x + cell.pos.x * cs + half_cell;
+          float cy = game->board_offset_y + cell.pos.y * cs + half_cell;
+          Vector2i dir = orientation_vector(cell.orientation);
+
+          SDL_RenderLine(game->renderer, cx, cy,
+                         cx + dir.x * tick_len,
+                         cy + dir.y * tick_len);
+        }
         break;
+      }
       case ENTITY_NONE:
         break;
       }

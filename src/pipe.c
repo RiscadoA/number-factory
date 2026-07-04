@@ -40,30 +40,37 @@ void pipe_free(Pipe *pipe) {
   pipe_item_deque_free(&pipe->items);
 }
 
-int pipe_extend(Pipe *pipe, Vector2i pos, Orientation orientation) {
-  if (pipe->cells.size == 0 ||
-      is_position_adjacent(DEQUE_AT(pipe->cells, pipe->cells.size - 1).pos,
-                           pos)) {
-
-    pipe_cell_deque_push_back(&pipe->cells, (PipeCell){
-                                                .pos = pos,
-                                                .orientation = orientation,
-                                            });
-    return 1;
+int pipe_extend_input(Pipe *pipe, Vector2i pos, Orientation orientation) {
+  if (pipe->cells.size != 0 &&
+      !is_position_adjacent(DEQUE_AT(pipe->cells, 0).pos, pos)) {
+    fprintf(stderr,
+            "pipe_extend_input: position %d,%d is not adjacent to first cell\n",
+            pos.x, pos.y);
+    return 0;
   }
 
-  if (is_position_adjacent(DEQUE_AT(pipe->cells, 0).pos, pos)) {
-    pipe_cell_deque_push_front(&pipe->cells, (PipeCell){
-                                                 .pos = pos,
-                                                 .orientation = orientation,
-                                             });
-    return 1;
+  pipe_cell_deque_push_front(&pipe->cells, (PipeCell){
+                                               .pos = pos,
+                                               .orientation = orientation,
+                                           });
+  return 1;
+}
+
+int pipe_extend_output(Pipe *pipe, Vector2i pos, Orientation orientation) {
+  if (pipe->cells.size != 0 &&
+      !is_position_adjacent(DEQUE_AT(pipe->cells, pipe->cells.size - 1).pos,
+                            pos)) {
+    fprintf(stderr,
+            "pipe_extend_output: position %d,%d is not adjacent to last cell\n",
+            pos.x, pos.y);
+    return 0;
   }
 
-  fprintf(stderr,
-          "pipe_extend: position %d,%d is not adjacent to first or last cell\n",
-          pos.x, pos.y);
-  return 0;
+  pipe_cell_deque_push_back(&pipe->cells, (PipeCell){
+                                              .pos = pos,
+                                              .orientation = orientation,
+                                          });
+  return 1;
 }
 
 int pipe_merge(Pipe *input, Pipe *output, Pipe *result) {
@@ -157,7 +164,34 @@ Orientation pipe_orientation(Pipe *pipe, Vector2i pos) {
   return DEQUE_AT(pipe->cells, index).orientation;
 }
 
-int pipe_is_start_or_end(Pipe *pipe, Vector2i pos) {
+int pipe_is_start_cell(Pipe *pipe, Vector2i pos) {
   int index = position_to_index(pipe, pos);
-  return index == 0 || index == pipe->cells.size - 1;
+  if (index < 0) {
+    fprintf(stderr, "pipe_is_start_cell: position not found\n");
+    return -1;
+  }
+  return index == 0;
+}
+
+int pipe_is_turn_cell(Pipe *pipe, Vector2i pos) {
+  int index = position_to_index(pipe, pos);
+  if (index < 0) {
+    fprintf(stderr, "pipe_is_turn_cell: position not found\n");
+    return -1;
+  }
+  if (index == 0) {
+    return 0;
+  }
+
+  return DEQUE_AT(pipe->cells, index).orientation !=
+         DEQUE_AT(pipe->cells, index - 1).orientation;
+}
+
+void pipe_debug(Pipe *pipe) {
+  for (int i = 0; i < pipe->cells.size; ++i) {
+    PipeCell cell = DEQUE_AT(pipe->cells, i);
+    fprintf(stderr, "| %s (%d, %d) ", orientation_to_string(cell.orientation),
+            cell.pos.x, cell.pos.y);
+  }
+  fprintf(stderr, "\n");
 }

@@ -33,6 +33,8 @@ Vector2i orientation_vector(Orientation orientation);
 
 Orientation vector_orientation(Vector2i vector);
 
+const char* orientation_to_string(Orientation orientation);
+
 Vector2i vector_subtract(Vector2i a, Vector2i b);
 
 Vector2i vector_add(Vector2i a, Vector2i b);

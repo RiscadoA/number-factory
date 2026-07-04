@@ -40,6 +40,21 @@ Orientation vector_orientation(Vector2i vector) {
   return -1;
 }
 
+const char* orientation_to_string(Orientation orientation) {
+  switch (orientation) {
+  case NORTH:
+    return "NORTH";
+  case EAST:
+    return "EAST";
+  case SOUTH:
+    return "SOUTH";
+  case WEST:
+    return "WEST";
+  default:
+    return "UNKNOWN";
+  }
+}
+
 Vector2i vector_subtract(Vector2i a, Vector2i b) {
   return (Vector2i){a.x - b.x, a.y - b.y};
 }

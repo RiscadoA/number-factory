@@ -4,7 +4,8 @@
 // - DEQUE_IMPLEMENT if you want functions to be defined instead of declared
 
 #ifndef DEQUE_AT
-#define DEQUE_AT(deque, index) (deque).buffer[(deque).first + (index)]
+#define DEQUE_AT(deque, index)                                                 \
+  (deque).buffer[((deque).first + (index)) % (deque).capacity]
 #endif
 
 #ifndef DEQUE_ELEMENT_TYPE
@@ -82,13 +83,14 @@ void DEQUE_RESERVE_FUNCTION(DEQUE_TYPE *deque, int extra_capacity) {
 
   int wrapped_count = MAX(0, deque->first + deque->size - deque->capacity);
   int moved_count = MIN(wrapped_count, deque->size);
+  int old_capacity = deque->capacity;
 
   deque->capacity += extra_capacity;
   deque->buffer =
       realloc(deque->buffer, deque->capacity * sizeof(DEQUE_ELEMENT_TYPE));
 
   if (moved_count > 0) {
-    memmove(deque->buffer + deque->capacity, deque->buffer,
+    memmove(deque->buffer + old_capacity, deque->buffer,
             moved_count * sizeof(DEQUE_ELEMENT_TYPE));
   }
 }

@@ -103,6 +103,7 @@ pkgs.mkShell {
     pkg-config
     sdl3
     sdl3-ttf
+    valgrind
   ];
 
   SDL3_EMSCRIPTEN_DIR="${sdl3Emscripten}/lib/cmake/SDL3";

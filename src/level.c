@@ -26,31 +26,127 @@ int level_place_pipe(Level *level, Vector2i pos, Orientation orientation) {
     return 0;
   }
 
-  Orientation opposite_orientation = orientation_opposite(orientation);
-
-  // Fetch all neighboring pipes
-  Entity *neighbors[4] = {};
-  Vector2i neighbor_positions[4] = {};
-  Orientation neighbor_orientations[4] = {};
+  // Collect input neighbors and output neighbor
+  Entity *input_entities[4];
+  EntityId input_ids[4];
+  Vector2i input_positions[4];
+  int input_count = 0;
+  Entity *output_entity = NULL;
+  EntityId output_id = ENTITY_NONE;
+  Vector2i output_position;
   for (Orientation i = ORIENTATION_ZERO; i < ORIENTATION_COUNT; i++) {
-    Vector2i offset = orientation_vector(i);
-    neighbor_positions[i] = vector_add(pos, offset);
-    if (!BOARD_VALID(&level->board, neighbor_positions[i].x,
-                     neighbor_positions[i].y)) {
-      neighbors[i] = NULL;
+    input_entities[i] = NULL;
+    input_ids[i] = ENTITY_NONE;
+
+    // Check if the position is valid at all
+    Vector2i position = vector_add(pos, orientation_vector(i));
+    if (!BOARD_VALID(&level->board, position.x, position.y)) {
       continue;
     }
 
-    EntityId neighbor_id = BOARD_AT(&level->board, neighbor_positions[i].x,
-                                    neighbor_positions[i].y);
-    neighbors[i] = ENTITY_AT(&level->entity_pool, neighbor_id);
-    if (neighbors[i]->type != ENTITY_PIPE) {
-      neighbors[i] = NULL;
+    // Check if there's a pipe entity at the neighbor position
+    EntityId id = BOARD_AT(&level->board, position.x, position.y);
+    Entity *ent = ENTITY_AT(&level->entity_pool, id);
+    if (ent->type != ENTITY_PIPE) {
       continue;
     }
 
-    neighbor_orientations[i] =
-        pipe_orientation(&neighbors[i]->pipe, neighbor_positions[i]);
+    // Get the orientation of the neighbor pipe
+    Orientation neighbor_orientation = pipe_orientation(&ent->pipe, position);
+    if (neighbor_orientation < 0) {
+      fprintf(stderr,
+              "level_place_pipe: failed to get neighbor pipe orientation\n");
+      continue;
+    }
+
+    // If we're pointing at the pipe and it isn't pointing to us, it is our
+    // output
+    if (i == orientation &&
+        neighbor_orientation != orientation_opposite(orientation)) {
+      output_entity = ent;
+      output_id = id;
+      output_position = position;
+      continue;
+    }
+
+    // If we're not pointing at the pipe and it is pointing to us, it is an
+    // input
+    if (i != orientation && neighbor_orientation == orientation_opposite(i)) {
+      input_entities[i] = ent;
+      input_ids[i] = id;
+      input_positions[i] = position;
+      input_count++;
+      continue;
+    }
+  }
+
+  // Points to the entity that the cell was added to, if any
+  Entity *current_entity = NULL;
+
+  // If we have an output entity, start by extending it with the current
+  // position
+  if (output_entity) {
+    pipe_debug(&output_entity->pipe);
+
+    int is_start = pipe_is_start_cell(&output_entity->pipe, output_position);
+    int is_aligned =
+        orientation == pipe_orientation(&output_entity->pipe, output_position);
+
+    // If the output position is a turn cell, disconnect it from any existing
+    // inputs
+    if (pipe_is_turn_cell(&output_entity->pipe, output_position)) {
+      fprintf(stderr, "Disconnecting turn cell at (%d, %d)\n", pos.x, pos.y);
+
+      Pipe old_input_pipe, new_pipe;
+      pipe_split(&output_entity->pipe, output_position, &old_input_pipe,
+                 &new_pipe);
+      pipe_free(&output_entity->pipe);
+      output_entity->pipe = new_pipe;
+
+      // Create a new entity for the old input pipe
+      // Replace all cells in the board with this entity's ID
+      EntityId id =
+          entity_create(&level->entity_pool,
+                        (Entity){.type = ENTITY_PIPE, .pipe = old_input_pipe});
+      for (int i = 0; i < old_input_pipe.cells.size; ++i) {
+        Vector2i cell = DEQUE_AT(old_input_pipe.cells, i).pos;
+        BOARD_AT(&level->board, cell.x, cell.y) = id;
+      }
+    }
+
+    // If we're the output position is the start cell of its pipe, or we're
+    // aligned with its orientation, extend the pipe
+    if (is_start || is_aligned) {
+      fprintf(stderr, "Extending existing pipe at (%d, %d)\n", pos.x, pos.y);
+
+      pipe_extend_input(&output_entity->pipe, pos, orientation);
+      current_entity = output_entity;
+      BOARD_AT(&level->board, pos.x, pos.y) = output_id;
+    }
+  }
+
+  // If we have an aligned input pipe
+  if (input_entities[orientation_opposite(orientation)]) {
+    // TODO:  connect it to the output pipe
+    fprintf(stderr, "Unimplemented\n");
+    return 0;
+  } else if (input_count == 1) {
+    // TODO: If we have a single input pipe, connect it to the output pipe
+    fprintf(stderr, "Unimplemented\n");
+    return 0;
+  }
+
+  // If we weren't able to connect into an existing pipe, create a new one
+  if (!current_entity) {
+    fprintf(stderr, "Creating new pipe at (%d, %d)\n", pos.x, pos.y);
+    Pipe pipe;
+    pipe_init(&pipe, 1);
+    pipe_extend_input(&pipe, pos, orientation);
+    EntityId id = entity_create(&level->entity_pool, (Entity){
+                                                         .type = ENTITY_PIPE,
+                                                         .pipe = pipe,
+                                                     });
+    BOARD_AT(&level->board, pos.x, pos.y) = id;
   }
 
   // ======== Connection patterns ========
@@ -66,77 +162,6 @@ int level_place_pipe(Level *level, Vector2i pos, Orientation orientation) {
   // a) Pointed to by a single pipe -> connect to it
   // b) Pointed to by multiple pipes, one of which is aligned with this pipe ->
   // connect to aligned pipe
-
-  Pipe *result_pipe = NULL;
-
-  // If we're placing a pipe pointing at an existing pipe, which is not pointing
-  // to us
-  if (neighbors[orientation] &&
-      neighbor_orientations[orientation] != opposite_orientation) {
-    // Check if the existing pipe has inputs
-    if (pipe_is_start_or_end(&neighbors[orientation]->pipe,
-                             neighbor_positions[orientation])) {
-      // In this case, the target pipe has no inputs, so we can just connect to
-      // it
-      pipe_extend(&neighbors[orientation]->pipe, pos, orientation);
-      result_pipe = &neighbors[orientation]->pipe;
-    } else if (orientation == neighbor_orientations[orientation]) {
-      // In this case, the target pipe points in the same direction as us, but
-      // is not a start/end We need to split the target pipe from its existing
-      // input, and connect to the split
-      Pipe input_pipe, output_pipe;
-      pipe_split(&neighbors[orientation]->pipe, neighbor_positions[orientation],
-                 &input_pipe, &output_pipe);
-      pipe_extend(&output_pipe, pos, orientation);
-
-      // The now disconnected pipe entity is replaced by the input pipe
-      pipe_free(&neighbors[orientation]->pipe);
-      neighbors[orientation]->pipe = input_pipe;
-
-      // We need to create a new entity for the output pipe
-      EntityId id = entity_create(&level->entity_pool, (Entity){
-                                                           .type = ENTITY_PIPE,
-                                                           .pipe = output_pipe,
-                                                       });
-      neighbors[orientation] = ENTITY_AT(&level->entity_pool, id);
-      BOARD_AT(&level->board, pos.x, pos.y) = id;
-      result_pipe = &neighbors[orientation]->pipe;
-    }
-  }
-
-  // Filter out neighbors that are not input pipes
-  int input_count = 0;
-  for (Orientation i = ORIENTATION_ZERO; i < ORIENTATION_COUNT; i++) {
-    if (neighbors[i] && neighbor_orientations[i] == orientation_opposite(i)) {
-      input_count++;
-    } else {
-      neighbors[i] = NULL;
-    }
-  }
-
-  // If we have an aligned input pipe
-  if (neighbors[opposite_orientation] &&
-      neighbor_orientations[opposite_orientation] == orientation) {
-    // TODO:  connect it to the output pipe
-    fprintf(stderr, "Unimplemented\n");
-    return 0;
-  } else if (input_count == 1) {
-    // TODO: If we have a single input pipe, connect it to the output pipe
-    fprintf(stderr, "Unimplemented\n");
-    return 0;
-  }
-
-  // Create a new pipe if we weren't able to connect to an existing one
-  if (!result_pipe) {
-    Pipe pipe;
-    pipe_init(&pipe, 1);
-    pipe_extend(&pipe, pos, orientation);
-    EntityId id = entity_create(&level->entity_pool, (Entity){
-                                                         .type = ENTITY_PIPE,
-                                                         .pipe = pipe,
-                                                     });
-    BOARD_AT(&level->board, pos.x, pos.y) = id;
-  }
 
   return 1;
 }

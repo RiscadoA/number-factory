@@ -30,7 +30,9 @@ void pipe_init(Pipe *pipe, int capacity);
 
 void pipe_free(Pipe *pipe);
 
-int pipe_extend(Pipe* pipe, Vector2i pos, Orientation orientation);
+int pipe_extend_input(Pipe* pipe, Vector2i pos, Orientation orientation);
+
+int pipe_extend_output(Pipe* pipe, Vector2i pos, Orientation orientation);
 
 // Connects two pipes together.
 // Pipes must be adjacent to each other, input pipe end targeting output pipe
@@ -50,6 +52,11 @@ int pipe_update(Pipe *pipe, int can_output, float dt);
 Orientation pipe_orientation(Pipe *pipe, Vector2i pos);
 
 // Checks if the given cell is the beginning or end of the pipe.
-int pipe_is_start_or_end(Pipe *pipe, Vector2i pos);
+int pipe_is_start_cell(Pipe *pipe, Vector2i pos);
+
+// Checks if the given cell has an aligned input cell.
+int pipe_is_turn_cell(Pipe *pipe, Vector2i pos);
+
+void pipe_debug(Pipe *pipe);
 
 #endif
