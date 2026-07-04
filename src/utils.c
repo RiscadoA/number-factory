@@ -2,6 +2,21 @@
 
 #include <stdlib.h>
 
+Orientation orientation_opposite(Orientation orientation) {
+  switch (orientation) {
+  case NORTH:
+    return SOUTH;
+  case EAST:
+    return WEST;
+  case SOUTH:
+    return NORTH;
+  case WEST:
+    return EAST;
+  default:
+    return -1;
+  }
+}
+
 Vector2i orientation_vector(Orientation orientation) {
   switch (orientation) {
   case NORTH:

@@ -1,6 +1,11 @@
 #ifndef UTILS_H
 #define UTILS_H
 
+#define MAX(a, b) ((a) > (b) ? (a) : (b))
+#define MIN(a, b) ((a) < (b) ? (a) : (b))
+
+#define DEQUE(type) struct { type *buffer; int count; int capacity; int begin; }
+
 typedef enum {
   ORIENTATION_ZERO,
 
@@ -21,6 +26,8 @@ typedef struct {
   int x;
   int y;
 } Vector2i;
+
+Orientation orientation_opposite(Orientation orientation);
 
 Vector2i orientation_vector(Orientation orientation);
 

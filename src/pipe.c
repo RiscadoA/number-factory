@@ -1,107 +1,151 @@
 #include "pipe.h"
 #include "utils.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+#define DEQUE_ELEMENT_TYPE PipeItem
+#define DEQUE_FUNCTION_PREFIX pipe_item_deque
+#define DEQUE_IMPLEMENT
+#include "deque.h"
+
+#define DEQUE_ELEMENT_TYPE PipeCell
+#define DEQUE_FUNCTION_PREFIX pipe_cell_deque
+#define DEQUE_IMPLEMENT
+#include "deque.h"
+
+static const float ITEM_GAP = 1.0f;
+static const float ITEM_SPEED = 1.0f;
+
 // returns -1 if the position is not found in the pipe
 static int position_to_index(Pipe *pipe, Vector2i pos) {
-  for (int i = 0; i < pipe->length; i++) {
-    if (pipe->positions[i].x == pos.x && pipe->positions[i].y == pos.y) {
+  for (int i = 0; i < pipe->cells.size; i++) {
+    if (DEQUE_AT(pipe->cells, i).pos.x == pos.x &&
+        DEQUE_AT(pipe->cells, i).pos.y == pos.y) {
       return i;
     }
   }
   return -1;
 }
 
-void pipe_init(Pipe *pipe, Vector2i pos) {
-  pipe->positions = malloc(sizeof(Vector2i));
-  pipe->length = 1;
-  pipe->positions[0] = pos;
-
-  pipe->values = malloc(sizeof(int));
-  pipe->values[0] = 0;
-  pipe->first_value = 0;
-
-  pipe->progress = 0.0f;
+void pipe_init(Pipe *pipe, int capacity) {
+  pipe_cell_deque_init(&pipe->cells, capacity);
+  pipe_item_deque_init(&pipe->items, capacity);
 }
 
 void pipe_free(Pipe *pipe) {
-  free(pipe->positions);
-  free(pipe->values);
+  pipe_cell_deque_free(&pipe->cells);
+  pipe_item_deque_free(&pipe->items);
 }
 
-void pipe_extend(Pipe *pipe, Vector2i pos) {
-  int is_append;
-  if (is_position_adjacent(pos, pipe->positions[0])) {
-    is_append = 0;
-  } else if (is_position_adjacent(pos, pipe->positions[pipe->length - 2])) {
-    is_append = 1;
-  } else {
-    fprintf(stderr, "position %d,%d is not adjacent to a pipe end\n", pos.x,
-            pos.y);
-    return;
+int pipe_extend(Pipe *pipe, Vector2i pos, Orientation orientation) {
+  if (pipe->cells.size == 0 ||
+      is_position_adjacent(DEQUE_AT(pipe->cells, pipe->cells.size - 1).pos,
+                           pos)) {
+
+    pipe_cell_deque_push_back(&pipe->cells, (PipeCell){
+                                                .pos = pos,
+                                                .orientation = orientation,
+                                            });
+    return 1;
   }
 
-  pipe->length += 1;
-  pipe->positions = realloc(pipe->positions, pipe->length * sizeof(Vector2i));
-  pipe->values = realloc(pipe->values, pipe->length * sizeof(int));
-
-  // In both append/prepend, move values ahead in the values buffer.
-  // The new cell will be at the current first_value position.
-  // If appending, first_value is incremented, making the new value the last
-  // cell.
-  memmove(pipe->values + pipe->first_value,
-          pipe->values + pipe->first_value + 1,
-          (pipe->length - pipe->first_value) * sizeof(int));
-  pipe->values[pipe->first_value] = 0;
-
-  if (is_append) {
-    pipe->positions[pipe->length - 1] = pos;
-    pipe->values[pipe->first_value] = 0;
-    pipe->first_value += 1;
-  } else {
-    memmove(pipe->positions + 1, pipe->positions,
-            pipe->length - 1 * sizeof(Vector2i));
-    pipe->positions[0] = pos;
+  if (is_position_adjacent(DEQUE_AT(pipe->cells, 0).pos, pos)) {
+    pipe_cell_deque_push_front(&pipe->cells, (PipeCell){
+                                                 .pos = pos,
+                                                 .orientation = orientation,
+                                             });
+    return 1;
   }
+
+  fprintf(stderr,
+          "pipe_extend: position %d,%d is not adjacent to first or last cell\n",
+          pos.x, pos.y);
+  return 0;
 }
 
-int pipe_can_feed(Pipe *pipe, Vector2i pos) {
-  int index = position_to_index(pipe, pos);
-  return index >= 0 && !pipe->values[index];
-}
-
-int pipe_feed(Pipe *pipe, Vector2i pos, int value) {
-  int index = position_to_index(pipe, pos);
-  if (index < 0 || pipe->values[index]) {
+int pipe_merge(Pipe *input, Pipe *output, Pipe *result) {
+  // Input pipe needs to point into the output pipe's first cell.
+  if (!is_position_adjacent(DEQUE_AT(input->cells, input->cells.size - 1).pos,
+                            DEQUE_AT(output->cells, 0).pos)) {
     return 0;
   }
-  pipe->values[index] = value;
+
+  pipe_init(result, input->cells.capacity + output->cells.capacity);
+
+  // Merge cells
+  for (int i = 0; i < input->cells.size; i++) {
+    pipe_cell_deque_push_back(&result->cells, DEQUE_AT(input->cells, i));
+  }
+  for (int i = 0; i < output->cells.size; i++) {
+    pipe_cell_deque_push_back(&result->cells, DEQUE_AT(output->cells, i));
+  }
+
+  // Merge items
+  for (int i = 0; i < input->items.size; i++) {
+    pipe_item_deque_push_back(&result->items, DEQUE_AT(input->items, i));
+  }
+  for (int i = 0; i < output->items.size; i++) {
+    PipeItem item = DEQUE_AT(output->items, i);
+    item.distance_from_start += (float)input->cells.size;
+    pipe_item_deque_push_back(&result->items, item);
+  }
+
   return 1;
 }
 
-int pipe_update(Pipe *pipe, float dt) {
-  pipe->progress += dt;
-  if (pipe->progress < 1.0f) {
+int pipe_split(Pipe *pipe, Vector2i start_pos, Pipe *result_input,
+               Pipe *result_output) {
+  int output_start_index = position_to_index(pipe, start_pos);
+  if (output_start_index < 0) {
+    fprintf(stderr, "Invalid start position: (%d, %d)\n", start_pos.x,
+            start_pos.y);
     return 0;
   }
 
-  pipe->progress -= 1.0f;
-  if (pipe->progress > 1.0f) {
-    fprintf(stderr,
-            "dt is too large, doing single pipe move per update anyway\n");
+  pipe_init(result_input, output_start_index);
+  pipe_init(result_output, pipe->cells.size - output_start_index);
+
+  for (int i = 0; i < output_start_index; ++i) {
+    pipe_cell_deque_push_back(&result_input->cells, DEQUE_AT(pipe->cells, i));
+  }
+  for (int i = output_start_index; i < pipe->cells.size; ++i) {
+    pipe_cell_deque_push_back(&result_output->cells, DEQUE_AT(pipe->cells, i));
   }
 
-  // Extract the value at the end of the pipe and clear it.
-  int last_value = (pipe->first_value + pipe->length - 1) % pipe->length;
-  int value = pipe->values[last_value];
-  pipe->values[last_value] = 0;
+  for (int i = 0; i < pipe->items.size; ++i) {
+    PipeItem item = DEQUE_AT(pipe->items, i);
+    if (item.distance_from_start <= (float)output_start_index) {
+      pipe_item_deque_push_back(&result_input->items, item);
+    } else {
+      item.distance_from_start -= (float)output_start_index;
+      pipe_item_deque_push_back(&result_output->items, item);
+    }
+  }
 
-  pipe->first_value = (pipe->first_value + 1) % pipe->length;
+  return 1;
+}
 
-  return value;
+int pipe_update(Pipe *pipe, int can_output, float dt) {
+  float max_distance = can_output ? INFINITY : (float)pipe->cells.size;
+  int return_value = 0;
+
+  for (int i = pipe->items.size - 1; i >= 0; --i) {
+    PipeItem *item = &DEQUE_AT(pipe->items, i);
+    item->distance_from_start += dt * ITEM_SPEED;
+    item->distance_from_start = fminf(item->distance_from_start, max_distance);
+    if (item->distance_from_start > (float)pipe->cells.size) {
+      return_value = item->value;
+      pipe_item_deque_pop_front(&pipe->items);
+      max_distance = (float)pipe->cells.size;
+    } else {
+      max_distance = item->distance_from_start - ITEM_GAP;
+    }
+  }
+
+  return return_value;
 }
 
 Orientation pipe_orientation(Pipe *pipe, Vector2i pos) {
@@ -110,13 +154,10 @@ Orientation pipe_orientation(Pipe *pipe, Vector2i pos) {
     fprintf(stderr, "pipe_orientation: position not found\n");
     return -1;
   }
-  if (pipe->length == 1) {
-    return -1;
-  }
+  return DEQUE_AT(pipe->cells, index).orientation;
+}
 
-  if (index == pipe->length - 1) {
-    index -= 1;
-  }
-
-  return vector_orientation(vector_subtract(pipe->positions[index + 1], pipe->positions[index]));
+int pipe_is_start_or_end(Pipe *pipe, Vector2i pos) {
+  int index = position_to_index(pipe, pos);
+  return index == 0 || index == pipe->cells.size - 1;
 }

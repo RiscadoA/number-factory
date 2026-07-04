@@ -30,9 +30,6 @@ if(EMSCRIPTEN)
   set(CMAKE_EXECUTABLE_SUFFIX ".html")
 endif()
 
-find_package(SDL3 REQUIRED)
-find_package(SDL3_ttf REQUIRED)
-
 add_executable(jam
   src/main.c
   src/utils.c
@@ -41,7 +38,15 @@ add_executable(jam
   src/entity.c
   src/pipe.c
 )
+
+find_package(SDL3 REQUIRED)
+find_package(SDL3_ttf REQUIRED)
 target_link_libraries(jam PRIVATE SDL3::SDL3 SDL3_ttf::SDL3_ttf)
+
+find_library(MATH_LIBRARY m)
+if(MATH_LIBRARY)
+  target_link_libraries(jam PRIVATE ${MATH_LIBRARY})
+endif()
 
 if(EMSCRIPTEN)
   target_link_options(jam PRIVATE

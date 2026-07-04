@@ -3,43 +3,53 @@
 
 #include "utils.h"
 
-/// A set of pipe cells, ordered from start to end.
 typedef struct {
-  Vector2i *positions;
-  int length;
+  Vector2i pos;
+  Orientation orientation;
+} PipeCell;
 
-  // Same length as positions, but indices don't match up.
-  // values[first_value] is the cell at positions[0].
-  //
-  // Moving the pipe forward just adjusts first_value.
-  int *values;
-  int first_value;
+typedef struct {
+  int value;
+  float distance_from_start;
+} PipeItem;
 
-  // Inner-cell movement progress from 0.0 to 1.0, incremented by dt each
-  // frame. When it reaches 1.0, the pipe moves forward.
-  float progress;
+#define DEQUE_ELEMENT_TYPE PipeItem
+#define DEQUE_FUNCTION_PREFIX pipe_item_deque
+#include "deque.h"
+
+#define DEQUE_ELEMENT_TYPE PipeCell
+#define DEQUE_FUNCTION_PREFIX pipe_cell_deque
+#include "deque.h"
+
+typedef struct {
+  PipeCellDeque cells;
+  PipeItemDeque items;
 } Pipe;
 
-void pipe_init(Pipe *pipe, Vector2i pos);
+void pipe_init(Pipe *pipe, int capacity);
 
 void pipe_free(Pipe *pipe);
 
-// Must be adjacent to either the start or end of the pipe.
-void pipe_extend(Pipe *pipe, Vector2i pos);
+int pipe_extend(Pipe* pipe, Vector2i pos, Orientation orientation);
 
-// Returns 1 if a value can be fed into the pipe at the given position, 0
-// otherwise.
-int pipe_can_feed(Pipe *pipe, Vector2i pos);
+// Connects two pipes together.
+// Pipes must be adjacent to each other, input pipe end targeting output pipe
+// start.
+int pipe_merge(Pipe *input, Pipe *output, Pipe *result);
 
-// Feeds a value into the pipe at the given position, if possible.
-int pipe_feed(Pipe *pipe, Vector2i pos, int value);
+// Splits a pipe into two pipes at the given position, such that the resulting
+// output pipe starts at the given position.
+int pipe_split(Pipe *pipe, Vector2i start_pos, Pipe *result_input,
+                Pipe *result_output);
 
-// Should only be called when there's space for the pipe to output values into.
 // Returns the value that was just output, or 0 if none.
-int pipe_update(Pipe *pipe, float dt);
+int pipe_update(Pipe *pipe, int can_output, float dt);
 
 // Gets the orientation of the pipe at the given position.
 // If the pipe has a single cell, or the operation fails, returns -1.
 Orientation pipe_orientation(Pipe *pipe, Vector2i pos);
+
+// Checks if the given cell is the beginning or end of the pipe.
+int pipe_is_start_or_end(Pipe *pipe, Vector2i pos);
 
 #endif

@@ -104,13 +104,6 @@ SDL_AppResult SDL_AppInit(void **state, int argc, char *argv[]) {
   game->board_offset_y =
       (height - game->cell_size * game->level.board.height) / 2.0f;
 
-  // TODO: remove this temp pipe
-  Vector2i pipe_position = {.x = 1, .y = 1};
-  EntityId pipe_id =
-      entity_create(&game->level.entity_pool, (Entity){.type = ENTITY_PIPE});
-  pipe_init(&ENTITY_AT(&game->level.entity_pool, pipe_id)->pipe, pipe_position);
-  BOARD_AT(&game->level.board, pipe_position.x, pipe_position.y) = pipe_id;
-
   if (!SDL_CreateWindowAndRenderer("jam", width, height, 0, &game->window,
                                    &game->renderer)) {
     SDL_Log("SDL_CreateWindowAndRenderer failed: %s", SDL_GetError());
