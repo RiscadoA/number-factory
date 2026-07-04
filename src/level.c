@@ -133,8 +133,8 @@ int level_place_pipe(Level *level, Vector2i pos, Orientation orientation) {
     picked_input = ORIENTATION_INVALID;
   }
 
-  // Connect to it
-  if (picked_input >= 0) {
+  // Connect to it, unless it would introduce a loop
+  if (picked_input >= 0 && input_ids[picked_input] != current_id) {
     Entity *input_entity = input_entities[picked_input];
     if (current_id) {
       // We have a pipe already, merge the two
