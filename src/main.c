@@ -2,12 +2,14 @@
 
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
+#include <SDL3_ttf/SDL_ttf.h>
 
 #include "level.h"
 
 typedef struct {
   SDL_Window *window;
   SDL_Renderer *renderer;
+  TTF_Font *font;
   Level level;
   float cell_size;
   float board_offset_x;
@@ -116,6 +118,17 @@ SDL_AppResult SDL_AppInit(void **state, int argc, char *argv[]) {
   }
   SDL_SetRenderDrawBlendMode(game->renderer, SDL_BLENDMODE_BLEND);
 
+  if (!TTF_Init()) {
+    SDL_Log("TTF_Init failed: %s", SDL_GetError());
+    return SDL_APP_FAILURE;
+  }
+
+  game->font = TTF_OpenFont("assets/fonts/PressStart2P-Regular.ttf", 64.0f);
+  if (!game->font) {
+    SDL_Log("TTF_OpenFont failed: %s", SDL_GetError());
+    return SDL_APP_FAILURE;
+  }
+
   return SDL_APP_CONTINUE;
 }
 
@@ -206,6 +219,8 @@ void SDL_AppQuit(void *state, SDL_AppResult result) {
   (void)result;
   NumberFactory *game = state;
   level_free(&game->level);
+  if (game->font) TTF_CloseFont(game->font);
+  TTF_Quit();
   if (game->renderer) SDL_DestroyRenderer(game->renderer);
   if (game->window) SDL_DestroyWindow(game->window);
   SDL_free(game);
