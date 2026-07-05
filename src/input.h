@@ -21,8 +21,8 @@ typedef struct {
 void input_init(Input *input, Vector2i position, Orientation orientation,
                 int value, float time_per_value);
 
-void input_update(Input *input, int (*callback)(void *user, int value),
-                  void *user, float dt);
+int input_update(Input *input, int (*callback)(void *user, int value),
+                 void *user, float dt);
 
 Vector2i input_output_position(Input *input);
 

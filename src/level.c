@@ -6,11 +6,25 @@
 #include "pipe.h"
 #include "utils.h"
 
+#include <SDL3/SDL.h>
 #include <stdio.h>
+#include <stdlib.h>
+
+enum {
+  INITIAL_HEALTH = 100,
+  HEALTH_PER_ITEM = 10,
+};
+
+static const float MISSED_ITEM_DURATION = 1.0f;
 
 void level_init(Level *level) {
   board_init(&level->board, 12, 8);
   entity_pool_init(&level->entity_pool, 12 * 8);
+  level->health = INITIAL_HEALTH;
+  level->max_health = INITIAL_HEALTH;
+  level->missed_items = NULL;
+  level->missed_item_count = 0;
+  level->missed_item_capacity = 0;
 
   // Init input
   Input input;
@@ -31,8 +45,55 @@ void level_init(Level *level) {
 }
 
 void level_free(Level *level) {
+  free(level->missed_items);
   board_free(&level->board);
   entity_pool_free(&level->entity_pool);
+}
+
+static void update_missed_items(Level *level, float dt) {
+  for (int i = level->missed_item_count - 1; i >= 0; i--) {
+    MissedItem *item = &level->missed_items[i];
+    item->progress += dt / MISSED_ITEM_DURATION;
+    if (item->progress >= 1.0f) {
+      level->missed_items[i] = level->missed_items[--level->missed_item_count];
+    }
+  }
+}
+
+static void add_missed_item(Level *level, Input *input) {
+  if (level->missed_item_count == level->missed_item_capacity) {
+    int capacity =
+        level->missed_item_capacity == 0 ? 4 : level->missed_item_capacity * 2;
+    MissedItem *items = realloc(level->missed_items, capacity * sizeof(*items));
+    if (!items) {
+      SDL_Log("Failed to allocate missed-number animation");
+    } else {
+      level->missed_items = items;
+      level->missed_item_capacity = capacity;
+    }
+  }
+
+  if (level->missed_item_count < level->missed_item_capacity) {
+    Vector2i direction = orientation_vector(input->orientation);
+    level->missed_items[level->missed_item_count++] = (MissedItem){
+        .value = input->value,
+        .start = {input->position.x + 0.5f + direction.x * 0.5f,
+                  input->position.y + 0.5f + direction.y * 0.5f},
+        .orientation = input->orientation,
+        .progress = 0.0f,
+    };
+  }
+
+  level->health = MAX(0, level->health - HEALTH_PER_ITEM);
+}
+
+Vector2f level_missed_item_position(const MissedItem *item) {
+  float t = MIN(1.0f, MAX(0.0f, item->progress));
+  Vector2f direction = vectori_to_f(orientation_vector(item->orientation));
+  Vector2f position =
+      vectorf_add(item->start, vectorf_scale(direction, 1.75f * t));
+  position.y -= 1.1f * 4.0f * t * (1.0f - t);
+  return position;
 }
 
 static int put_item_on(Level *level, Vector2i pos, Orientation orientation,
@@ -55,7 +116,9 @@ static int put_item_on(Level *level, Vector2i pos, Orientation orientation,
   case ENTITY_INPUT:
     return 0;
   case ENTITY_OUTPUT:
-    return output_accept(&ent->output, orientation, value);
+    if (!output_accept(&ent->output, orientation, value)) return 0;
+    level->health = MIN(level->max_health, level->health + HEALTH_PER_ITEM);
+    return 1;
   }
 }
 
@@ -71,6 +134,9 @@ static int output_item_callback(void *user, int value) {
 }
 
 void level_update(Level *level, float dt) {
+  update_missed_items(level, dt);
+  if (level->health <= 0) return;
+
   for (int i = 0; i < level->entity_pool.capacity; ++i) {
     Entity *ent = ENTITY_AT(&level->entity_pool, i);
     switch (ent->type) {
@@ -88,12 +154,15 @@ void level_update(Level *level, float dt) {
       OutputItemArgs args = {.level = level,
                              .output_pos = input_output_position(&ent->input),
                              .orientation = ent->input.orientation};
-      input_update(&ent->input, output_item_callback, &args, dt);
+      if (input_update(&ent->input, output_item_callback, &args, dt)) {
+        add_missed_item(level, &ent->input);
+      }
       break;
     }
     case ENTITY_OUTPUT:
       break;
     }
+    if (level->health <= 0) break;
   }
 }
 

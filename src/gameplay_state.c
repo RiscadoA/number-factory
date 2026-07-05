@@ -40,6 +40,7 @@ typedef struct {
   TextTexture filter_label;
   TextTexture rotate_label;
   TextTexture pause_label;
+  TextTexture health_label;
 } GameplayHud;
 
 typedef struct {
@@ -58,6 +59,10 @@ typedef struct {
   Orientation orientation;
   Uint64 last_ticks;
 } GameplayState;
+
+static void number_renderer_draw(NumberRenderer *renderer,
+                                 SDL_Renderer *sdl_renderer, int value,
+                                 SDL_FRect bounds);
 
 static void gameplay_state_layout(GameplayState *state, int width, int height) {
   state->viewport_width = width;
@@ -104,18 +109,20 @@ static void gameplay_hud_free(GameplayHud *hud) {
   text_texture_free(&hud->filter_label);
   text_texture_free(&hud->rotate_label);
   text_texture_free(&hud->pause_label);
+  text_texture_free(&hud->health_label);
   if (hud->font) TTF_CloseFont(hud->font);
   hud->font = NULL;
 }
 
 static int gameplay_hud_init(GameplayHud *hud, NumberFactory *game) {
-  hud->font = TTF_OpenFont("assets/fonts/PressStart2P-Regular.ttf", 12.0f);
+  hud->font = TTF_OpenFont("assets/fonts/PressStart2P-Regular.ttf", 10.0f);
   if (!hud->font ||
       !text_texture_init(&hud->pipe_label, game, hud->font, "1 PIPE") ||
       !text_texture_init(&hud->filter_label, game, hud->font, "2 FILTER") ||
       !text_texture_init(&hud->rotate_label, game, hud->font,
                          "R/WHEEL ROTATE") ||
-      !text_texture_init(&hud->pause_label, game, hud->font, "ESC PAUSE")) {
+      !text_texture_init(&hud->pause_label, game, hud->font, "ESC PAUSE") ||
+      !text_texture_init(&hud->health_label, game, hud->font, "HP")) {
     SDL_Log("Failed to create gameplay HUD: %s", SDL_GetError());
     gameplay_hud_free(hud);
     return 0;
@@ -150,16 +157,49 @@ static void gameplay_hud_render(GameplayState *state, NumberFactory *game) {
   SDL_FRect background = {0.0f, 0.0f, state->viewport_width, HUD_HEIGHT};
   SDL_RenderFillRect(game->renderer, &background);
 
-  SDL_FRect pipe_button = {8.0f, 6.0f, 84.0f, 32.0f};
-  SDL_FRect filter_button = {98.0f, 6.0f, 108.0f, 32.0f};
-  SDL_FRect rotate_hint = {212.0f, 6.0f, 180.0f, 32.0f};
-  SDL_FRect pause_hint = {398.0f, 6.0f, 120.0f, 32.0f};
+  SDL_FRect pipe_button = {8.0f, 6.0f, 72.0f, 32.0f};
+  SDL_FRect filter_button = {86.0f, 6.0f, 92.0f, 32.0f};
+  SDL_FRect rotate_hint = {184.0f, 6.0f, 152.0f, 32.0f};
+  SDL_FRect pause_hint = {342.0f, 6.0f, 102.0f, 32.0f};
   gameplay_hud_draw_button(game, &state->hud.pipe_label, pipe_button,
                            state->placement_mode == PLACEMENT_PIPE);
   gameplay_hud_draw_button(game, &state->hud.filter_label, filter_button,
                            state->placement_mode == PLACEMENT_FILTER);
   gameplay_hud_draw_button(game, &state->hud.rotate_label, rotate_hint, 0);
   gameplay_hud_draw_button(game, &state->hud.pause_label, pause_hint, 0);
+
+  SDL_FRect health_bar = {(float)state->viewport_width - 88.0f, 6.0f, 80.0f,
+                          32.0f};
+  SDL_SetRenderDrawColor(game->renderer, 75, 55, 65, 255);
+  SDL_RenderFillRect(game->renderer, &health_bar);
+  float health_ratio = (float)state->level.health / state->level.max_health;
+  if (health_ratio > 0.5f) {
+    SDL_SetRenderDrawColor(game->renderer, 105, 205, 120, 255);
+  } else if (health_ratio > 0.25f) {
+    SDL_SetRenderDrawColor(game->renderer, 235, 195, 80, 255);
+  } else {
+    SDL_SetRenderDrawColor(game->renderer, 225, 85, 85, 255);
+  }
+  SDL_FRect health_fill = {health_bar.x + 2.0f, health_bar.y + 2.0f,
+                           (health_bar.w - 4.0f) * health_ratio,
+                           health_bar.h - 4.0f};
+  SDL_RenderFillRect(game->renderer, &health_fill);
+  SDL_SetRenderDrawColor(game->renderer, 40, 30, 40, 255);
+  SDL_RenderRect(game->renderer, &health_bar);
+
+  TextTexture *health_label = &state->hud.health_label;
+  SDL_FRect label_destination = {
+      .x = health_bar.x + 5.0f,
+      .y = health_bar.y + (health_bar.h - health_label->height) / 2.0f,
+      .w = health_label->width,
+      .h = health_label->height,
+  };
+  SDL_RenderTexture(game->renderer, health_label->texture, NULL,
+                    &label_destination);
+  SDL_FRect health_number = {health_bar.x + 29.0f, health_bar.y + 5.0f,
+                             health_bar.w - 34.0f, health_bar.h - 10.0f};
+  number_renderer_draw(&state->number_renderer, game->renderer,
+                       state->level.health, health_number);
 }
 
 static void number_renderer_free(NumberRenderer *renderer) {
@@ -605,7 +645,6 @@ static SDL_AppResult gameplay_state_event(GameState *base, NumberFactory *game,
 
 static SDL_AppResult gameplay_state_update(GameState *base,
                                            NumberFactory *game) {
-  (void)game;
   GameplayState *state = (GameplayState *)base;
 
   Uint64 now = SDL_GetTicks();
@@ -613,6 +652,10 @@ static SDL_AppResult gameplay_state_update(GameState *base,
   state->last_ticks = now;
 
   level_update(&state->level, dt);
+  if (state->level.health <= 0 && state->level.missed_item_count == 0) {
+    // TODO: Replace this with a dedicated game-over state.
+    game_state_stack_pop(&game->states, game);
+  }
   return SDL_APP_CONTINUE;
 }
 
@@ -715,6 +758,12 @@ static void gameplay_state_render(GameState *base, NumberFactory *game) {
         break;
       }
     }
+  }
+
+  for (int i = 0; i < state->level.missed_item_count; i++) {
+    MissedItem *item = &state->level.missed_items[i];
+    Vector2f pos = level_missed_item_position(item);
+    draw_item(game, state, pos, item->value);
   }
 
   if (state->has_hovered_cell) {
