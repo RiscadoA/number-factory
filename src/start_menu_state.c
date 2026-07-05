@@ -27,8 +27,8 @@ static SDL_Texture *create_text_texture(NumberFactory *game, const char *text) {
 }
 
 static void render_centered_texture(NumberFactory *game, SDL_Texture *texture,
-                                    float center_y, float max_width,
-                                    float max_scale) {
+                                    float screen_width, float center_y,
+                                    float max_width, float max_scale) {
   float width;
   float height;
   if (!SDL_GetTextureSize(texture, &width, &height)) return;
@@ -39,7 +39,7 @@ static void render_centered_texture(NumberFactory *game, SDL_Texture *texture,
   }
 
   SDL_FRect destination = {
-      .x = (GAME_WIDTH - width * scale) / 2.0f,
+      .x = (screen_width - width * scale) / 2.0f,
       .y = center_y - height * scale / 2.0f,
       .w = width * scale,
       .h = height * scale,
@@ -96,13 +96,17 @@ static SDL_AppResult start_menu_state_update(GameState *base,
 
 static void start_menu_state_render(GameState *base, NumberFactory *game) {
   StartMenuState *state = (StartMenuState *)base;
+  int width;
+  int height;
+  SDL_GetWindowSize(game->window, &width, &height);
 
   SDL_SetRenderDrawColor(game->renderer, 220, 190, 200, 255);
   SDL_RenderClear(game->renderer);
 
-  render_centered_texture(game, state->title, 240.0f, GAME_WIDTH * 0.8f, 1.0f);
-  render_centered_texture(game, state->prompt, 360.0f, GAME_WIDTH * 0.6f,
-                          0.55f);
+  render_centered_texture(game, state->title, width, height * 0.4f,
+                          width * 0.8f, 1.0f);
+  render_centered_texture(game, state->prompt, width, height * 0.6f,
+                          width * 0.6f, 0.55f);
 }
 
 GameState *start_menu_state_create(NumberFactory *game) {

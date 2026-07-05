@@ -27,11 +27,13 @@ SDL_AppResult SDL_AppInit(void **state, int argc, char *argv[]) {
   *state = game;
   game_state_stack_init(&game->states);
 
-  if (!SDL_CreateWindowAndRenderer("Number Factory", GAME_WIDTH, GAME_HEIGHT, 0,
-                                   &game->window, &game->renderer)) {
+  if (!SDL_CreateWindowAndRenderer("Number Factory", GAME_WIDTH, GAME_HEIGHT,
+                                   SDL_WINDOW_RESIZABLE, &game->window,
+                                   &game->renderer)) {
     SDL_Log("SDL_CreateWindowAndRenderer failed: %s", SDL_GetError());
     return SDL_APP_FAILURE;
   }
+  SDL_SetWindowMinimumSize(game->window, 540, 400);
   SDL_SetRenderDrawBlendMode(game->renderer, SDL_BLENDMODE_BLEND);
 
   if (!TTF_Init()) {

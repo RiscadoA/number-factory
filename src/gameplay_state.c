@@ -13,7 +13,13 @@
 enum {
   NUMBER_GLYPH_COUNT = 11,
   NUMBER_MINUS_GLYPH = 10,
+  HUD_HEIGHT = 44,
 };
+
+typedef enum {
+  PLACEMENT_PIPE,
+  PLACEMENT_FILTER,
+} PlacementMode;
 
 typedef struct {
   SDL_Texture *textures[NUMBER_GLYPH_COUNT];
@@ -22,17 +28,133 @@ typedef struct {
 } NumberRenderer;
 
 typedef struct {
+  SDL_Texture *texture;
+  float width;
+  float height;
+} TextTexture;
+
+typedef struct {
+  TTF_Font *font;
+  TextTexture pipe_label;
+  TextTexture filter_label;
+  TextTexture rotate_label;
+} GameplayHud;
+
+typedef struct {
   GameState base;
   Level level;
   NumberRenderer number_renderer;
+  GameplayHud hud;
+  PlacementMode placement_mode;
   float cell_size;
   float board_offset_x;
   float board_offset_y;
+  int viewport_width;
+  int viewport_height;
   Vector2i hovered_cell;
   int has_hovered_cell;
   Orientation orientation;
   Uint64 last_ticks;
 } GameplayState;
+
+static void gameplay_state_layout(GameplayState *state, int width, int height) {
+  state->viewport_width = width;
+  state->viewport_height = height;
+
+  float cell_width = (float)width / state->level.board.width;
+  float cell_height = (float)(height - HUD_HEIGHT) / state->level.board.height;
+  state->cell_size = MIN(cell_width, cell_height);
+  state->board_offset_x =
+      (width - state->cell_size * state->level.board.width) / 2.0f;
+  state->board_offset_y =
+      HUD_HEIGHT +
+      (height - HUD_HEIGHT - state->cell_size * state->level.board.height) /
+          2.0f;
+}
+
+static void text_texture_free(TextTexture *text) {
+  if (text->texture) SDL_DestroyTexture(text->texture);
+  text->texture = NULL;
+  text->width = 0.0f;
+  text->height = 0.0f;
+}
+
+static int text_texture_init(TextTexture *text, NumberFactory *game,
+                             TTF_Font *font, const char *value) {
+  SDL_Color color = {.r = 40, .g = 30, .b = 40, .a = 255};
+  SDL_Surface *surface = TTF_RenderText_Blended(font, value, 0, color);
+  if (!surface) return 0;
+
+  text->texture = SDL_CreateTextureFromSurface(game->renderer, surface);
+  SDL_DestroySurface(surface);
+  if (!text->texture ||
+      !SDL_GetTextureSize(text->texture, &text->width, &text->height)) {
+    text_texture_free(text);
+    return 0;
+  }
+
+  SDL_SetTextureScaleMode(text->texture, SDL_SCALEMODE_NEAREST);
+  return 1;
+}
+
+static void gameplay_hud_free(GameplayHud *hud) {
+  text_texture_free(&hud->pipe_label);
+  text_texture_free(&hud->filter_label);
+  text_texture_free(&hud->rotate_label);
+  if (hud->font) TTF_CloseFont(hud->font);
+  hud->font = NULL;
+}
+
+static int gameplay_hud_init(GameplayHud *hud, NumberFactory *game) {
+  hud->font = TTF_OpenFont("assets/fonts/PressStart2P-Regular.ttf", 14.0f);
+  if (!hud->font ||
+      !text_texture_init(&hud->pipe_label, game, hud->font, "1 PIPE") ||
+      !text_texture_init(&hud->filter_label, game, hud->font, "2 FILTER") ||
+      !text_texture_init(&hud->rotate_label, game, hud->font,
+                         "R / WHEEL ROTATE")) {
+    SDL_Log("Failed to create gameplay HUD: %s", SDL_GetError());
+    gameplay_hud_free(hud);
+    return 0;
+  }
+  return 1;
+}
+
+static void gameplay_hud_draw_button(NumberFactory *game, TextTexture *label,
+                                     SDL_FRect bounds, int selected) {
+  if (selected) {
+    SDL_SetRenderDrawColor(game->renderer, 255, 220, 100, 255);
+  } else {
+    SDL_SetRenderDrawColor(game->renderer, 180, 155, 165, 255);
+  }
+  SDL_RenderFillRect(game->renderer, &bounds);
+  SDL_SetRenderDrawColor(game->renderer, 40, 30, 40, 255);
+  SDL_RenderRect(game->renderer, &bounds);
+
+  float scale = MIN(1.0f, MIN((bounds.w - 20.0f) / label->width,
+                              (bounds.h - 14.0f) / label->height));
+  SDL_FRect destination = {
+      .x = bounds.x + (bounds.w - label->width * scale) / 2.0f,
+      .y = bounds.y + (bounds.h - label->height * scale) / 2.0f,
+      .w = label->width * scale,
+      .h = label->height * scale,
+  };
+  SDL_RenderTexture(game->renderer, label->texture, NULL, &destination);
+}
+
+static void gameplay_hud_render(GameplayState *state, NumberFactory *game) {
+  SDL_SetRenderDrawColor(game->renderer, 40, 30, 40, 255);
+  SDL_FRect background = {0.0f, 0.0f, state->viewport_width, HUD_HEIGHT};
+  SDL_RenderFillRect(game->renderer, &background);
+
+  SDL_FRect pipe_button = {8.0f, 6.0f, 110.0f, 32.0f};
+  SDL_FRect filter_button = {126.0f, 6.0f, 140.0f, 32.0f};
+  SDL_FRect rotate_hint = {274.0f, 6.0f, 250.0f, 32.0f};
+  gameplay_hud_draw_button(game, &state->hud.pipe_label, pipe_button,
+                           state->placement_mode == PLACEMENT_PIPE);
+  gameplay_hud_draw_button(game, &state->hud.filter_label, filter_button,
+                           state->placement_mode == PLACEMENT_FILTER);
+  gameplay_hud_draw_button(game, &state->hud.rotate_label, rotate_hint, 0);
+}
 
 static void number_renderer_free(NumberRenderer *renderer) {
   for (int i = 0; i < NUMBER_GLYPH_COUNT; i++) {
@@ -175,6 +297,7 @@ static void draw_item(NumberFactory *game, GameplayState *state, Vector2f pos,
 static void gameplay_state_destroy(GameState *base, NumberFactory *game) {
   (void)game;
   GameplayState *state = (GameplayState *)base;
+  gameplay_hud_free(&state->hud);
   number_renderer_free(&state->number_renderer);
   level_free(&state->level);
   free(state);
@@ -191,9 +314,22 @@ static SDL_AppResult gameplay_state_event(GameState *base, NumberFactory *game,
   (void)game;
   GameplayState *state = (GameplayState *)base;
 
-  if (event->type == SDL_EVENT_KEY_DOWN && event->key.key == SDLK_R &&
-      !event->key.repeat) {
-    rotate_orientation(state, 1);
+  if (event->type == SDL_EVENT_KEY_DOWN && !event->key.repeat) {
+    switch (event->key.key) {
+    case SDLK_1:
+    case SDLK_KP_1:
+      state->placement_mode = PLACEMENT_PIPE;
+      break;
+    case SDLK_2:
+    case SDLK_KP_2:
+      state->placement_mode = PLACEMENT_FILTER;
+      break;
+    case SDLK_R:
+      rotate_orientation(state, 1);
+      break;
+    default:
+      break;
+    }
   }
 
   if (event->type == SDL_EVENT_MOUSE_WHEEL) {
@@ -215,7 +351,13 @@ static SDL_AppResult gameplay_state_event(GameState *base, NumberFactory *game,
     Vector2i cell;
     if (screen_to_board_cell(state, event->button.x, event->button.y, &cell)) {
       if (event->button.button == SDL_BUTTON_LEFT) {
-        level_place_pipe(&state->level, cell, state->orientation);
+        if (state->placement_mode == PLACEMENT_PIPE) {
+          level_place_pipe(&state->level, cell, state->orientation);
+        } else if (BOARD_AT(&state->level.board, cell.x, cell.y) ==
+                   ENTITY_NONE) {
+          SDL_Log("Placing filter at (%d, %d), orientation %s", cell.x, cell.y,
+                  orientation_to_string(state->orientation));
+        }
       } else {
         level_remove(&state->level, cell);
       }
@@ -240,9 +382,27 @@ static SDL_AppResult gameplay_state_update(GameState *base,
 
 static void gameplay_state_render(GameState *base, NumberFactory *game) {
   GameplayState *state = (GameplayState *)base;
+  int width;
+  int height;
+  SDL_GetWindowSize(game->window, &width, &height);
+  if (width != state->viewport_width || height != state->viewport_height) {
+    gameplay_state_layout(state, width, height);
+  }
 
   SDL_SetRenderDrawColor(game->renderer, 220, 190, 200, 255);
   SDL_RenderClear(game->renderer);
+  gameplay_hud_render(state, game);
+
+  SDL_FRect board_bounds = {
+      .x = state->board_offset_x,
+      .y = state->board_offset_y,
+      .w = state->cell_size * state->level.board.width,
+      .h = state->cell_size * state->level.board.height,
+  };
+  SDL_SetRenderDrawColor(game->renderer, 200, 165, 180, 255);
+  SDL_RenderFillRect(game->renderer, &board_bounds);
+  SDL_SetRenderDrawColor(game->renderer, 120, 90, 105, 255);
+  SDL_RenderRect(game->renderer, &board_bounds);
 
   for (int x = 0; x < state->level.board.width; x++) {
     for (int y = 0; y < state->level.board.height; y++) {
@@ -360,9 +520,17 @@ static void gameplay_state_render(GameState *base, NumberFactory *game) {
         .w = state->cell_size,
         .h = state->cell_size,
     };
-    SDL_SetRenderDrawColor(game->renderer, 255, 255, 255, 48);
+    if (state->placement_mode == PLACEMENT_FILTER) {
+      SDL_SetRenderDrawColor(game->renderer, 80, 255, 255, 48);
+    } else {
+      SDL_SetRenderDrawColor(game->renderer, 255, 255, 255, 48);
+    }
     SDL_RenderFillRect(game->renderer, &preview);
-    SDL_SetRenderDrawColor(game->renderer, 255, 255, 255, 192);
+    if (state->placement_mode == PLACEMENT_FILTER) {
+      SDL_SetRenderDrawColor(game->renderer, 80, 255, 255, 192);
+    } else {
+      SDL_SetRenderDrawColor(game->renderer, 255, 255, 255, 192);
+    }
     draw_orientation_arrow(game->renderer, preview, state->orientation);
   }
 }
@@ -381,15 +549,17 @@ GameState *gameplay_state_create(NumberFactory *game) {
     gameplay_state_destroy(&state->base, game);
     return NULL;
   }
+  if (!gameplay_hud_init(&state->hud, game)) {
+    gameplay_state_destroy(&state->base, game);
+    return NULL;
+  }
+  state->placement_mode = PLACEMENT_PIPE;
   state->orientation = NORTH;
   state->last_ticks = SDL_GetTicks();
-  float cell_width = (float)GAME_WIDTH / state->level.board.width;
-  float cell_height = (float)GAME_HEIGHT / state->level.board.height;
-  state->cell_size = cell_width < cell_height ? cell_width : cell_height;
-  state->board_offset_x =
-      (GAME_WIDTH - state->cell_size * state->level.board.width) / 2.0f;
-  state->board_offset_y =
-      (GAME_HEIGHT - state->cell_size * state->level.board.height) / 2.0f;
+  int width;
+  int height;
+  SDL_GetWindowSize(game->window, &width, &height);
+  gameplay_state_layout(state, width, height);
 
   (void)game;
   return &state->base;
