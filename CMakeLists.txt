@@ -56,8 +56,15 @@ if(MATH_LIBRARY)
 endif()
 
 if(EMSCRIPTEN)
+  set_target_properties(jam PROPERTIES OUTPUT_NAME "index")
+  set_property(TARGET jam APPEND PROPERTY LINK_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/web/shell.html"
+  )
   target_link_options(jam PRIVATE
+    "--shell-file"
+    "${CMAKE_CURRENT_SOURCE_DIR}/web/shell.html"
     "--preload-file"
     "${CMAKE_CURRENT_SOURCE_DIR}/assets@/assets"
+    "-sALLOW_MEMORY_GROWTH=1"
   )
 endif()

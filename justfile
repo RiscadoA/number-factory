@@ -13,4 +13,7 @@ web:
     cmake --build build/web
 
 serve: web
-    emrun build/web/jam.html
+    emrun build/web/index.html
+
+itch: web
+    cd build/web && cmake -E tar cf ../number-factory-itch.zip --format=zip index.html index.js index.wasm index.data
