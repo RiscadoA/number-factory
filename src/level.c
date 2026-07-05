@@ -4,6 +4,7 @@
 #include "input.h"
 #include "output.h"
 #include "pipe.h"
+#include "splitter.h"
 #include "utils.h"
 
 #include <SDL3/SDL.h>
@@ -108,12 +109,13 @@ static int put_item_on(Level *level, Vector2i pos, Orientation orientation,
 
   Entity *ent = ENTITY_AT(&level->entity_pool, id);
   switch (ent->type) {
-  case ENTITY_NONE:
-    return 0;
   case ENTITY_PIPE: {
     return pipe_add_item(&ent->pipe, pos, orientation, value);
   }
-  case ENTITY_INPUT:
+  case ENTITY_SPLITTER: {
+    return splitter_add_item(&ent->splitter, value);
+  }
+  default:
     return 0;
   case ENTITY_OUTPUT:
     if (!output_accept(&ent->output, orientation, value)) return 0;
@@ -131,6 +133,19 @@ typedef struct {
 static int output_item_callback(void *user, int value) {
   OutputItemArgs *args = (OutputItemArgs *)user;
   return put_item_on(args->level, args->output_pos, args->orientation, value);
+}
+
+typedef struct {
+  Level *level;
+  Vector2i splitter_pos;
+} OutputItemSplitterArgs;
+
+static int output_item_splitter_callback(void *user, Orientation orientation,
+                                         int value) {
+  OutputItemSplitterArgs *args = (OutputItemSplitterArgs *)user;
+  Vector2i output_pos =
+      vector_add(args->splitter_pos, orientation_vector(orientation));
+  return put_item_on(args->level, output_pos, orientation, value);
 }
 
 void level_update(Level *level, float dt) {
@@ -161,6 +176,12 @@ void level_update(Level *level, float dt) {
     }
     case ENTITY_OUTPUT:
       break;
+    case ENTITY_SPLITTER: {
+      OutputItemSplitterArgs args = {.level = level,
+                                     .splitter_pos = ent->splitter.position};
+      splitter_update(&ent->splitter, output_item_splitter_callback, &args, dt);
+      break;
+    }
     }
     if (level->health <= 0) break;
   }
@@ -325,6 +346,21 @@ int level_place_pipe(Level *level, Vector2i pos, Orientation orientation) {
   return 1;
 }
 
+int level_place_splitter(Level *level, Vector2i pos, Orientation orientation) {
+  if (BOARD_AT(&level->board, pos.x, pos.y) != ENTITY_NONE) {
+    return 0;
+  }
+
+  Splitter splitter;
+  splitter_init(&splitter, pos, orientation);
+  BOARD_AT(&level->board, pos.x, pos.y) =
+      entity_create(&level->entity_pool, (Entity){
+                                             .type = ENTITY_SPLITTER,
+                                             .splitter = splitter,
+                                         });
+  return 1;
+}
+
 int level_remove(Level *level, Vector2i pos) {
   EntityId id = BOARD_AT(&level->board, pos.x, pos.y);
   if (id == 0) {
@@ -367,6 +403,10 @@ int level_remove(Level *level, Vector2i pos) {
         pipe_free(&result_input);
       }
     }
+    return 1;
+  case ENTITY_SPLITTER:
+    BOARD_AT(&level->board, pos.x, pos.y) = ENTITY_NONE;
+    entity_destroy(&level->entity_pool, id);
     return 1;
   default:
     return 0;

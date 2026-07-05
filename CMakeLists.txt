@@ -44,6 +44,7 @@ add_executable(jam
   src/input.c
   src/output.c
   src/splitter.c
+  src/item.c
 )
 
 find_package(SDL3 REQUIRED)

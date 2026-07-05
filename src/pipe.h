@@ -2,21 +2,12 @@
 #define PIPE_H
 
 #include "utils.h"
+#include "item.h"
 
 typedef struct {
   Vector2i pos;
   Orientation orientation;
 } PipeCell;
-
-typedef struct {
-  int value;
-  float distance_from_start;
-  Orientation source_orientation;
-} PipeItem;
-
-#define DEQUE_ELEMENT_TYPE PipeItem
-#define DEQUE_FUNCTION_PREFIX pipe_item_deque
-#include "deque.h"
 
 #define DEQUE_ELEMENT_TYPE PipeCell
 #define DEQUE_FUNCTION_PREFIX pipe_cell_deque
@@ -24,7 +15,7 @@ typedef struct {
 
 typedef struct {
   PipeCellDeque cells;
-  PipeItemDeque items;
+  ItemDeque items;
 } Pipe;
 
 void pipe_init(Pipe *pipe, int capacity);

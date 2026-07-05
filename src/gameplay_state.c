@@ -10,6 +10,7 @@
 #include "level.h"
 #include "pause_state.h"
 #include "pipe.h"
+#include "splitter.h"
 
 enum {
   NUMBER_GLYPH_COUNT = 11,
@@ -19,7 +20,7 @@ enum {
 
 typedef enum {
   PLACEMENT_PIPE,
-  PLACEMENT_FILTER,
+  PLACEMENT_SPLITTER,
 } PlacementMode;
 
 typedef struct {
@@ -37,7 +38,7 @@ typedef struct {
 typedef struct {
   TTF_Font *font;
   TextTexture pipe_label;
-  TextTexture filter_label;
+  TextTexture splitter_label;
   TextTexture rotate_label;
   TextTexture pause_label;
   TextTexture health_label;
@@ -108,7 +109,7 @@ static int text_texture_init(TextTexture *text, NumberFactory *game,
 
 static void gameplay_hud_free(GameplayHud *hud) {
   text_texture_free(&hud->pipe_label);
-  text_texture_free(&hud->filter_label);
+  text_texture_free(&hud->splitter_label);
   text_texture_free(&hud->rotate_label);
   text_texture_free(&hud->pause_label);
   text_texture_free(&hud->health_label);
@@ -121,7 +122,7 @@ static int gameplay_hud_init(GameplayHud *hud, NumberFactory *game) {
   hud->font = TTF_OpenFont("assets/fonts/PressStart2P-Regular.ttf", 10.0f);
   if (!hud->font ||
       !text_texture_init(&hud->pipe_label, game, hud->font, "1 PIPE") ||
-      !text_texture_init(&hud->filter_label, game, hud->font, "2 FILTER") ||
+      !text_texture_init(&hud->splitter_label, game, hud->font, "2 SPLITTER") ||
       !text_texture_init(&hud->rotate_label, game, hud->font,
                          "R/WHEEL ROTATE") ||
       !text_texture_init(&hud->pause_label, game, hud->font, "ESC PAUSE") ||
@@ -177,8 +178,8 @@ static void gameplay_hud_render(GameplayState *state, NumberFactory *game) {
   SDL_FRect pause_hint = {342.0f, 6.0f, 102.0f, 32.0f};
   gameplay_hud_draw_button(game, &state->hud.pipe_label, pipe_button,
                            state->placement_mode == PLACEMENT_PIPE);
-  gameplay_hud_draw_button(game, &state->hud.filter_label, filter_button,
-                           state->placement_mode == PLACEMENT_FILTER);
+  gameplay_hud_draw_button(game, &state->hud.splitter_label, filter_button,
+                           state->placement_mode == PLACEMENT_SPLITTER);
   gameplay_hud_draw_button(game, &state->hud.rotate_label, rotate_hint, 0);
   gameplay_hud_draw_button(game, &state->hud.pause_label, pause_hint, 0);
 
@@ -368,6 +369,16 @@ static void draw_item(NumberFactory *game, GameplayState *state, Vector2f pos,
   draw_item_scaled(game, state, pos, value, 1.0f);
 }
 
+typedef struct {
+  NumberFactory *game;
+  GameplayState *state;
+} DrawItemCallbackData;
+
+static void draw_item_callback(void *user, int value, Vector2f position) {
+  DrawItemCallbackData *data = user;
+  draw_item(data->game, data->state, position, value);
+}
+
 static void draw_pipe_half_segment(SDL_Renderer *renderer, float center_x,
                                    float center_y, Vector2i direction,
                                    float length, float width) {
@@ -502,6 +513,60 @@ static void draw_output(NumberFactory *game, GameplayState *state,
   SDL_RenderFillRect(game->renderer, &direction_marker);
 }
 
+static void draw_splitter(NumberFactory *game, SDL_FRect cell,
+                          Splitter *splitter) {
+  float center_x = cell.x + cell.w / 2.0f;
+  float center_y = cell.y + cell.h / 2.0f;
+  float half_cell = cell.w * 0.5f;
+  float casing_width = cell.w * 0.38f;
+  float channel_width = cell.w * 0.24f;
+
+  // Draw dark casing arms in all four directions
+  SDL_SetRenderDrawColor(game->renderer, 55, 40, 50, 255);
+  for (Orientation o = ORIENTATION_ZERO; o < ORIENTATION_COUNT; o++) {
+    Vector2i dir = orientation_vector(o);
+    draw_pipe_half_segment(game->renderer, center_x, center_y, dir, half_cell,
+                           casing_width);
+  }
+
+  // Draw teal channel arms in all four directions
+  SDL_SetRenderDrawColor(game->renderer, 80, 220, 220, 255);
+  for (Orientation o = ORIENTATION_ZERO; o < ORIENTATION_COUNT; o++) {
+    Vector2i dir = orientation_vector(o);
+    draw_pipe_half_segment(game->renderer, center_x, center_y, dir, half_cell,
+                           channel_width);
+  }
+
+  // Central casing block
+  SDL_SetRenderDrawColor(game->renderer, 55, 40, 50, 255);
+  SDL_FRect joint = {
+      center_x - casing_width / 2.0f,
+      center_y - casing_width / 2.0f,
+      casing_width,
+      casing_width,
+  };
+  SDL_RenderFillRect(game->renderer, &joint);
+
+  // Inner panel
+  SDL_FRect panel = {
+      center_x - channel_width / 2.0f,
+      center_y - channel_width / 2.0f,
+      channel_width,
+      channel_width,
+  };
+  SDL_SetRenderDrawColor(game->renderer, 60, 200, 200, 255);
+  SDL_RenderFillRect(game->renderer, &panel);
+
+  // Highlight strip
+  SDL_SetRenderDrawColor(game->renderer, 120, 240, 240, 255);
+  SDL_FRect highlight = {panel.x, panel.y, panel.w, cell.h * 0.055f};
+  SDL_RenderFillRect(game->renderer, &highlight);
+
+  // Indicate the input orientation
+  SDL_SetRenderDrawColor(game->renderer, 20, 60, 60, 255);
+  draw_orientation_arrow(game->renderer, cell, splitter->orientation);
+}
+
 static void draw_pipe_layer(SDL_Renderer *renderer, GameplayState *state,
                             Pipe *pipe, float width) {
   float half_cell = state->cell_size * 0.5f;
@@ -624,7 +689,7 @@ static SDL_AppResult gameplay_state_event(GameState *base, NumberFactory *game,
       break;
     case SDLK_2:
     case SDLK_KP_2:
-      state->placement_mode = PLACEMENT_FILTER;
+      state->placement_mode = PLACEMENT_SPLITTER;
       break;
     case SDLK_R:
       rotate_orientation(state, 1);
@@ -655,12 +720,13 @@ static SDL_AppResult gameplay_state_event(GameState *base, NumberFactory *game,
     Vector2i cell;
     if (screen_to_board_cell(state, event->button.x, event->button.y, &cell)) {
       if (event->button.button == SDL_BUTTON_LEFT) {
-        if (state->placement_mode == PLACEMENT_PIPE) {
-          level_place_pipe(&state->level, cell, state->orientation);
-        } else if (BOARD_AT(&state->level.board, cell.x, cell.y) ==
-                   ENTITY_NONE) {
-          SDL_Log("Placing filter at (%d, %d), orientation %s", cell.x, cell.y,
-                  orientation_to_string(state->orientation));
+        switch (state->placement_mode) {
+          case PLACEMENT_PIPE:
+            level_place_pipe(&state->level, cell, state->orientation);
+            break;
+          case PLACEMENT_SPLITTER:
+            level_place_splitter(&state->level, cell, state->orientation);
+            break;
         }
       } else {
         level_remove(&state->level, cell);
@@ -748,6 +814,11 @@ static void gameplay_state_render(GameState *base, NumberFactory *game) {
         draw_output(game, state, rect, output);
         break;
       }
+      case ENTITY_SPLITTER: {
+        Splitter *splitter = &entity->splitter;
+        draw_splitter(game, rect, splitter);
+        break;
+      }
       }
     }
   }
@@ -766,7 +837,7 @@ static void gameplay_state_render(GameState *base, NumberFactory *game) {
         if (pipe->cells.size == 0) break;
 
         for (int i = 0; i < pipe->items.size; i++) {
-          PipeItem item = DEQUE_AT(pipe->items, i);
+          Item item = DEQUE_AT(pipe->items, i);
           Vector2f pos = pipe_item_position(pipe, i);
           draw_item(game, state, pos, item.value);
         }
@@ -778,6 +849,12 @@ static void gameplay_state_render(GameState *base, NumberFactory *game) {
           Vector2f pos = input_item_position(input);
           draw_item(game, state, pos, input->value);
         }
+        break;
+      }
+      case ENTITY_SPLITTER: {
+        Splitter *splitter = &entity->splitter;
+        DrawItemCallbackData data = {game, state};
+        splitter_for_each_item_position(splitter, draw_item_callback, &data);
         break;
       }
       case ENTITY_NONE:
@@ -803,13 +880,13 @@ static void gameplay_state_render(GameState *base, NumberFactory *game) {
         .w = state->cell_size,
         .h = state->cell_size,
     };
-    if (state->placement_mode == PLACEMENT_FILTER) {
+    if (state->placement_mode == PLACEMENT_SPLITTER) {
       SDL_SetRenderDrawColor(game->renderer, 80, 255, 255, 48);
     } else {
       SDL_SetRenderDrawColor(game->renderer, 255, 255, 255, 48);
     }
     SDL_RenderFillRect(game->renderer, &preview);
-    if (state->placement_mode == PLACEMENT_FILTER) {
+    if (state->placement_mode == PLACEMENT_SPLITTER) {
       SDL_SetRenderDrawColor(game->renderer, 80, 255, 255, 192);
     } else {
       SDL_SetRenderDrawColor(game->renderer, 255, 255, 255, 192);

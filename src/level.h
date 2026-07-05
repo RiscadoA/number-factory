@@ -33,6 +33,8 @@ Vector2f level_missed_item_position(const MissedItem *item);
 // Places a pipe cell at the given position with the given orientation.
 int level_place_pipe(Level *level, Vector2i pos, Orientation orientation);
 
+int level_place_splitter(Level *level, Vector2i pos, Orientation orientation);
+
 // Removes whatever is at the given position.
 int level_remove(Level *level, Vector2i pos);
 

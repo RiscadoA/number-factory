@@ -4,15 +4,17 @@
 #include "pipe.h"
 #include "input.h"
 #include "output.h"
+#include "splitter.h"
 
 typedef int EntityId;
 
 typedef enum {
   // Reserved for uninitialized entities
   ENTITY_NONE = -1,
-  ENTITY_PIPE,
   ENTITY_INPUT,
+  ENTITY_PIPE,
   ENTITY_OUTPUT,
+  ENTITY_SPLITTER,
 } EntityType;
 
 typedef struct {
@@ -21,6 +23,7 @@ typedef struct {
     Pipe pipe;
     Input input;
     Output output;
+    Splitter splitter;
   };
 } Entity;
 
