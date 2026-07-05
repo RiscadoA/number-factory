@@ -46,8 +46,7 @@ int pipe_merge(Pipe *input, Pipe *output, Pipe *result);
 int pipe_split(Pipe *pipe, Vector2i start_pos, Pipe *result_input,
                 Pipe *result_output);
 
-// Returns the value that was just output, or 0 if none.
-int pipe_update(Pipe *pipe, int can_output, float dt);
+void pipe_update(Pipe *pipe, int(*callback)(void* user, int value), void *user, float dt);
 
 // Gets the orientation of the pipe at the given position.
 // If the pipe has a single cell, or the operation fails, returns -1.
@@ -60,8 +59,6 @@ int pipe_is_start_cell(Pipe *pipe, Vector2i pos);
 int pipe_is_turn_cell(Pipe *pipe, Vector2i pos);
 
 Vector2i pipe_output_position(Pipe *pipe);
-
-int pipe_can_add_item(Pipe *pipe, Vector2i pos);
 
 int pipe_add_item(Pipe *pipe, Vector2i pos, int value);
 

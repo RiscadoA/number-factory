@@ -150,8 +150,9 @@ int pipe_split(Pipe *pipe, Vector2i start_pos, Pipe *result_input,
   return 1;
 }
 
-int pipe_update(Pipe *pipe, int can_output, float dt) {
-  float max_distance = can_output ? INFINITY : (float)pipe->cells.size;
+void pipe_update(Pipe *pipe, int (*callback)(void *user, int value), void *user,
+                 float dt) {
+  float max_distance = INFINITY;
   int return_value = 0;
 
   for (int i = pipe->items.size - 1; i >= 0; --i) {
@@ -159,15 +160,17 @@ int pipe_update(Pipe *pipe, int can_output, float dt) {
     item->distance_from_start += dt * ITEM_SPEED;
     item->distance_from_start = fminf(item->distance_from_start, max_distance);
     if (item->distance_from_start > (float)pipe->cells.size) {
-      return_value = item->value;
-      pipe_item_deque_pop_back(&pipe->items);
-      max_distance = (float)pipe->cells.size;
+      if (callback(user, item->value)) {
+        pipe_item_deque_pop_back(&pipe->items);
+        max_distance = (float)pipe->cells.size;
+      } else {
+        item->distance_from_start = (float)pipe->cells.size;
+        max_distance = item->distance_from_start - ITEM_GAP;
+      }
     } else {
       max_distance = item->distance_from_start - ITEM_GAP;
     }
   }
-
-  return return_value;
 }
 
 Orientation pipe_orientation(Pipe *pipe, Vector2i pos) {
@@ -205,25 +208,6 @@ int pipe_is_turn_cell(Pipe *pipe, Vector2i pos) {
 Vector2i pipe_output_position(Pipe *pipe) {
   PipeCell last_cell = DEQUE_AT(pipe->cells, pipe->cells.size - 1);
   return vector_add(last_cell.pos, orientation_vector(last_cell.orientation));
-}
-
-int pipe_can_add_item(Pipe *pipe, Vector2i pos) {
-  int index = position_to_index(pipe, pos);
-  if (index < 0) {
-    return 0;
-  }
-  float desired_distance = (float)index;
-
-  // Check if placing the item with distance = index would work
-  for (int i = 0; i < pipe->items.size; ++i) {
-    int dist = DEQUE_AT(pipe->items, i).distance_from_start;
-    if (dist >= desired_distance - ITEM_GAP &&
-        dist <= desired_distance + ITEM_GAP) {
-      return 0;
-    }
-  }
-
-  return 1;
 }
 
 int pipe_add_item(Pipe *pipe, Vector2i pos, int value) {

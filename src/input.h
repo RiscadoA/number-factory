@@ -21,8 +21,8 @@ typedef struct {
 void input_init(Input *input, Vector2i position, Orientation orientation,
                 int value, float time_per_value);
 
-// Returns the value that was just output, or 0 if none.
-int input_update(Input *input, float dt, int can_output);
+void input_update(Input *input, int (*callback)(void *user, int value),
+                  void *user, float dt);
 
 Vector2i input_output_position(Input *input);
 

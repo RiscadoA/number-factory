@@ -26,26 +26,6 @@ void level_free(Level *level) {
   entity_pool_free(&level->entity_pool);
 }
 
-static int can_put_item_on(Level *level, Vector2i pos) {
-  if (!BOARD_VALID(&level->board, pos.x, pos.y)) {
-    return 0;
-  }
-  EntityId id = BOARD_AT(&level->board, pos.x, pos.y);
-  if (id == ENTITY_NONE) {
-    return 0;
-  }
-
-  Entity *ent = ENTITY_AT(&level->entity_pool, id);
-  switch (ent->type) {
-  case ENTITY_NONE:
-    return 0;
-  case ENTITY_PIPE:
-    return pipe_can_add_item(&ent->pipe, pos);
-  case ENTITY_INPUT:
-    return 0;
-  }
-}
-
 static int put_item_on(Level *level, Vector2i pos, int value) {
   if (!BOARD_VALID(&level->board, pos.x, pos.y)) {
     return 0;
@@ -67,6 +47,16 @@ static int put_item_on(Level *level, Vector2i pos, int value) {
   }
 }
 
+typedef struct {
+  Level *level;
+  Vector2i output_pos;
+} OutputItemArgs;
+
+static int output_item_callback(void *user, int value) {
+  OutputItemArgs *args = (OutputItemArgs *)user;
+  return put_item_on(args->level, args->output_pos, value);
+}
+
 void level_update(Level *level, float dt) {
   for (int i = 0; i < level->entity_pool.capacity; ++i) {
     Entity *ent = ENTITY_AT(&level->entity_pool, i);
@@ -74,25 +64,15 @@ void level_update(Level *level, float dt) {
     case ENTITY_NONE:
       break;
     case ENTITY_PIPE: {
-      Vector2i output_pos = pipe_output_position(&ent->pipe);
-      int can_output = can_put_item_on(level, output_pos);
-      int value = pipe_update(&ent->pipe, can_output, dt);
-      if (value != 0) {
-        if (!put_item_on(level, output_pos, value)) {
-          fprintf(stderr, "Could not place item on output position\n");
-        }
-      }
+      OutputItemArgs args = {.level = level,
+                             .output_pos = pipe_output_position(&ent->pipe)};
+      pipe_update(&ent->pipe, output_item_callback, &args, dt);
       break;
     }
     case ENTITY_INPUT: {
-      Vector2i output_pos = input_output_position(&ent->input);
-      int can_output = can_put_item_on(level, output_pos);
-      int value = input_update(&ent->input, dt, can_output);
-      if (value != 0) {
-        if (!put_item_on(level, output_pos, value)) {
-          fprintf(stderr, "Could not place item on output position\n");
-        }
-      }
+      OutputItemArgs args = {.level = level,
+                             .output_pos = input_output_position(&ent->input)};
+      input_update(&ent->input, output_item_callback, &args, dt);
       break;
     }
     }

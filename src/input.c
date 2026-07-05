@@ -12,29 +12,27 @@ void input_init(Input *input, Vector2i position, Orientation orientation,
   input->progress = 0.0f;
 }
 
-int input_update(Input *input, float dt, int can_output) {
+void input_update(Input *input, int (*callback)(void *user, int value),
+                  void *user, float dt) {
   input->time_accumulator += dt;
 
   if (input->progress > 0.0f) {
     input->progress += dt * ITEM_SPEED;
 
     if (input->progress >= 1.0f) {
-      if (can_output) {
+      if (callback(user, input->value)) {
         input->progress = 0.0f;
-        return input->value;
+      } else {
+        input->progress = 1.0f;
       }
-      input->progress = 1.0f;
     }
-
-    return 0;
+    return;
   }
 
   if (input->time_accumulator >= input->time_per_value) {
     input->time_accumulator -= input->time_per_value;
     input->progress = 0.00001f;
   }
-
-  return 0;
 }
 
 Vector2i input_output_position(Input *input) {
