@@ -247,7 +247,7 @@ static void gameplay_state_render(GameState *base, NumberFactory *game) {
   for (int x = 0; x < state->level.board.width; x++) {
     for (int y = 0; y < state->level.board.height; y++) {
       EntityId id = BOARD_AT(&state->level.board, x, y);
-      if (id == 0) continue;
+      if (id == ENTITY_NONE) continue;
       Entity *entity = ENTITY_AT(&state->level.entity_pool, id);
       SDL_FRect rect = {
           .x = state->board_offset_x + x * state->cell_size,
@@ -323,7 +323,7 @@ static void gameplay_state_render(GameState *base, NumberFactory *game) {
   for (int x = 0; x < state->level.board.width; x++) {
     for (int y = 0; y < state->level.board.height; y++) {
       EntityId id = BOARD_AT(&state->level.board, x, y);
-      if (id == 0) continue;
+      if (id == ENTITY_NONE) continue;
       Entity *entity = ENTITY_AT(&state->level.entity_pool, id);
 
       switch (entity->type) {

@@ -104,7 +104,7 @@ int level_place_pipe(Level *level, Vector2i pos, Orientation orientation) {
     return 0;
   }
   EntityId id = BOARD_AT(&level->board, pos.x, pos.y);
-  if (id != 0) {
+  if (id != ENTITY_NONE) {
     fprintf(stderr, "Cannot place pipe in occupied cell\n");
     return 0;
   }
@@ -219,7 +219,7 @@ int level_place_pipe(Level *level, Vector2i pos, Orientation orientation) {
   // Connect to it, unless it would introduce a loop
   if (picked_input >= 0 && input_ids[picked_input] != current_id) {
     Entity *input_entity = input_entities[picked_input];
-    if (current_id) {
+    if (current_id != ENTITY_NONE) {
       // We have a pipe already, merge the two
       Entity *current_entity = ENTITY_AT(&level->entity_pool, current_id);
 
@@ -241,7 +241,7 @@ int level_place_pipe(Level *level, Vector2i pos, Orientation orientation) {
   }
 
   // If we weren't able to connect into an existing pipe, create a new one
-  if (!current_id) {
+  if (current_id == ENTITY_NONE) {
     Pipe pipe;
     pipe_init(&pipe, 1);
     pipe_extend_input(&pipe, pos, orientation);
@@ -252,7 +252,6 @@ int level_place_pipe(Level *level, Vector2i pos, Orientation orientation) {
   }
 
   BOARD_AT(&level->board, pos.x, pos.y) = current_id;
-
   return 1;
 }
 
@@ -298,11 +297,8 @@ int level_remove(Level *level, Vector2i pos) {
         pipe_free(&result_input);
       }
     }
-
-    break;
-  case ENTITY_NONE:
-    break;
+    return 1;
+  default:
+    return 0;
   }
-
-  return 0;
 }

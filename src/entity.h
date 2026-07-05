@@ -8,7 +8,7 @@ typedef int EntityId;
 
 typedef enum {
   // Reserved for uninitialized entities
-  ENTITY_NONE,
+  ENTITY_NONE = -1,
   ENTITY_PIPE,
   ENTITY_INPUT,
 } EntityType;
