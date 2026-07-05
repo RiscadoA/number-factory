@@ -294,6 +294,107 @@ static void draw_item(NumberFactory *game, GameplayState *state, Vector2f pos,
   number_renderer_draw(&state->number_renderer, game->renderer, value, rect);
 }
 
+static void draw_pipe_half_segment(SDL_Renderer *renderer, float center_x,
+                                   float center_y, Vector2i direction,
+                                   float length, float width) {
+  SDL_FRect segment;
+  if (direction.x < 0) {
+    segment =
+        (SDL_FRect){center_x - length, center_y - width / 2.0f, length, width};
+  } else if (direction.x > 0) {
+    segment = (SDL_FRect){center_x, center_y - width / 2.0f, length, width};
+  } else if (direction.y < 0) {
+    segment =
+        (SDL_FRect){center_x - width / 2.0f, center_y - length, width, length};
+  } else {
+    segment = (SDL_FRect){center_x - width / 2.0f, center_y, width, length};
+  }
+  SDL_RenderFillRect(renderer, &segment);
+}
+
+static void draw_pipe_layer(SDL_Renderer *renderer, GameplayState *state,
+                            Pipe *pipe, float width) {
+  float half_cell = state->cell_size * 0.5f;
+
+  for (int i = 0; i < pipe->cells.size; i++) {
+    PipeCell cell = DEQUE_AT(pipe->cells, i);
+    Vector2i output = orientation_vector(cell.orientation);
+    Vector2i input;
+    if (i == 0) {
+      input = orientation_vector(orientation_opposite(cell.orientation));
+    } else {
+      PipeCell previous = DEQUE_AT(pipe->cells, i - 1);
+      Vector2i previous_output = orientation_vector(previous.orientation);
+      input = (Vector2i){-previous_output.x, -previous_output.y};
+    }
+
+    float center_x =
+        state->board_offset_x + (cell.pos.x + 0.5f) * state->cell_size;
+    float center_y =
+        state->board_offset_y + (cell.pos.y + 0.5f) * state->cell_size;
+    draw_pipe_half_segment(renderer, center_x, center_y, input, half_cell,
+                           width);
+    draw_pipe_half_segment(renderer, center_x, center_y, output, half_cell,
+                           width);
+
+    SDL_FRect joint = {
+        center_x - width / 2.0f,
+        center_y - width / 2.0f,
+        width,
+        width,
+    };
+    SDL_RenderFillRect(renderer, &joint);
+  }
+}
+
+static void draw_pipe_direction_markers(SDL_Renderer *renderer,
+                                        GameplayState *state, Pipe *pipe) {
+  float block_size = state->cell_size * 0.055f;
+  float forward = state->cell_size * 0.1f;
+  float sideways = state->cell_size * 0.075f;
+
+  for (int i = 0; i < pipe->cells.size; i++) {
+    PipeCell cell = DEQUE_AT(pipe->cells, i);
+    Vector2i direction = orientation_vector(cell.orientation);
+    Vector2i perpendicular = {-direction.y, direction.x};
+    float center_x =
+        state->board_offset_x + (cell.pos.x + 0.5f) * state->cell_size;
+    float center_y =
+        state->board_offset_y + (cell.pos.y + 0.5f) * state->cell_size;
+
+    Vector2f offsets[] = {
+        {direction.x * forward, direction.y * forward},
+        {-direction.x * forward * 0.35f + perpendicular.x * sideways,
+         -direction.y * forward * 0.35f + perpendicular.y * sideways},
+        {-direction.x * forward * 0.35f - perpendicular.x * sideways,
+         -direction.y * forward * 0.35f - perpendicular.y * sideways},
+    };
+    for (int j = 0; j < 3; j++) {
+      SDL_FRect block = {
+          center_x + offsets[j].x - block_size / 2.0f,
+          center_y + offsets[j].y - block_size / 2.0f,
+          block_size,
+          block_size,
+      };
+      SDL_RenderFillRect(renderer, &block);
+    }
+  }
+}
+
+static void draw_pipe(NumberFactory *game, GameplayState *state, Pipe *pipe) {
+  float casing_width = state->cell_size * 0.38f;
+  float channel_width = state->cell_size * 0.24f;
+
+  SDL_SetRenderDrawColor(game->renderer, 55, 40, 50, 255);
+  draw_pipe_layer(game->renderer, state, pipe, casing_width);
+
+  SDL_SetRenderDrawColor(game->renderer, 185, 175, 165, 255);
+  draw_pipe_layer(game->renderer, state, pipe, channel_width);
+
+  SDL_SetRenderDrawColor(game->renderer, 255, 245, 235, 210);
+  draw_pipe_direction_markers(game->renderer, state, pipe);
+}
+
 static void gameplay_state_destroy(GameState *base, NumberFactory *game) {
   (void)game;
   GameplayState *state = (GameplayState *)base;
@@ -420,47 +521,7 @@ static void gameplay_state_render(GameState *base, NumberFactory *game) {
         Pipe *pipe = &entity->pipe;
         if (pipe_is_start_cell(pipe, (Vector2i){x, y}) != 1) break;
         if (pipe->cells.size == 0) break;
-
-        static const uint8_t colors[][3] = {
-            {255, 80, 80},  {80, 255, 80},  {80, 80, 255},  {255, 255, 80},
-            {255, 80, 255}, {80, 255, 255}, {255, 160, 80}, {160, 80, 255},
-        };
-        uint8_t r = colors[id % 8][0];
-        uint8_t g = colors[id % 8][1];
-        uint8_t b = colors[id % 8][2];
-        float half_cell = state->cell_size * 0.5f;
-        float cs = state->cell_size;
-
-        SDL_SetRenderDrawColor(game->renderer, r, g, b, 255);
-        float cell_center_pad = cs * 0.3f;
-        for (int i = 0; i < pipe->cells.size; i++) {
-          PipeCell cell = DEQUE_AT(pipe->cells, i);
-          float cx = state->board_offset_x + cell.pos.x * cs + cell_center_pad;
-          float cy = state->board_offset_y + cell.pos.y * cs + cell_center_pad;
-          float size = cs - cell_center_pad * 2.0f;
-          SDL_FRect fill = {cx, cy, size, size};
-          SDL_RenderFillRect(game->renderer, &fill);
-        }
-
-        for (int i = 0; i < pipe->cells.size - 1; i++) {
-          PipeCell a = DEQUE_AT(pipe->cells, i);
-          PipeCell b = DEQUE_AT(pipe->cells, i + 1);
-          float ax = state->board_offset_x + a.pos.x * cs + half_cell;
-          float ay = state->board_offset_y + a.pos.y * cs + half_cell;
-          float bx = state->board_offset_x + b.pos.x * cs + half_cell;
-          float by = state->board_offset_y + b.pos.y * cs + half_cell;
-          SDL_RenderLine(game->renderer, ax, ay, bx, by);
-        }
-
-        float tick_len = state->cell_size * 0.3f;
-        for (int i = 0; i < pipe->cells.size; i++) {
-          PipeCell cell = DEQUE_AT(pipe->cells, i);
-          float cx = state->board_offset_x + cell.pos.x * cs + half_cell;
-          float cy = state->board_offset_y + cell.pos.y * cs + half_cell;
-          Vector2i dir = orientation_vector(cell.orientation);
-          SDL_RenderLine(game->renderer, cx, cy, cx + dir.x * tick_len,
-                         cy + dir.y * tick_len);
-        }
+        draw_pipe(game, state, pipe);
         break;
       }
       case ENTITY_NONE:
