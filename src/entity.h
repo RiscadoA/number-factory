@@ -5,6 +5,7 @@
 #include "input.h"
 #include "output.h"
 #include "splitter.h"
+#include "addition.h"
 
 typedef int EntityId;
 
@@ -15,6 +16,7 @@ typedef enum {
   ENTITY_PIPE,
   ENTITY_OUTPUT,
   ENTITY_SPLITTER,
+  ENTITY_ADDITION,
 } EntityType;
 
 typedef struct {
@@ -24,6 +26,7 @@ typedef struct {
     Input input;
     Output output;
     Splitter splitter;
+    Addition addition;
   };
 } Entity;
 

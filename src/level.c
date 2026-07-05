@@ -5,6 +5,7 @@
 #include "output.h"
 #include "pipe.h"
 #include "splitter.h"
+#include "addition.h"
 #include "utils.h"
 
 #include <SDL3/SDL.h>
@@ -115,6 +116,9 @@ static int put_item_on(Level *level, Vector2i pos, Orientation orientation,
   case ENTITY_SPLITTER: {
     return splitter_add_item(&ent->splitter, value);
   }
+  case ENTITY_ADDITION: {
+    return addition_add_item(&ent->addition, pos, value);
+  }
   default:
     return 0;
   case ENTITY_OUTPUT:
@@ -139,6 +143,21 @@ typedef struct {
   Level *level;
   Vector2i splitter_pos;
 } OutputItemSplitterArgs;
+
+static int output_item_splitter_callback(void *user, Orientation orientation,
+                                         int value);
+
+typedef struct {
+  Level *level;
+  Vector2i output_pos;
+  Orientation orientation;
+} OutputItemAdditionArgs;
+
+static int output_item_addition_callback(void *user, Orientation orientation,
+                                         int value) {
+  OutputItemAdditionArgs *args = (OutputItemAdditionArgs *)user;
+  return put_item_on(args->level, args->output_pos, args->orientation, value);
+}
 
 static int output_item_splitter_callback(void *user, Orientation orientation,
                                          int value) {
@@ -180,6 +199,19 @@ void level_update(Level *level, float dt) {
       OutputItemSplitterArgs args = {.level = level,
                                      .splitter_pos = ent->splitter.position};
       splitter_update(&ent->splitter, output_item_splitter_callback, &args, dt);
+      break;
+    }
+    case ENTITY_ADDITION: {
+      Vector2i secondary = vector_add(ent->addition.position,
+                                      orientation_vector(ent->addition.orientation));
+      Vector2i output_pos = vector_add(secondary,
+                                       orientation_vector(ent->addition.orientation));
+      OutputItemAdditionArgs args = {
+          .level = level,
+          .output_pos = output_pos,
+          .orientation = ent->addition.orientation,
+      };
+      addition_update(&ent->addition, output_item_addition_callback, &args, dt);
       break;
     }
     }
@@ -361,6 +393,33 @@ int level_place_splitter(Level *level, Vector2i pos, Orientation orientation) {
   return 1;
 }
 
+int level_place_addition(Level *level, Vector2i pos, Orientation orientation) {
+  if (!BOARD_VALID(&level->board, pos.x, pos.y)) {
+    return 0;
+  }
+  if (BOARD_AT(&level->board, pos.x, pos.y) != ENTITY_NONE) {
+    return 0;
+  }
+
+  Vector2i secondary = vector_add(pos, orientation_vector(orientation));
+  if (!BOARD_VALID(&level->board, secondary.x, secondary.y)) {
+    return 0;
+  }
+  if (BOARD_AT(&level->board, secondary.x, secondary.y) != ENTITY_NONE) {
+    return 0;
+  }
+
+  Addition addition;
+  addition_init(&addition, pos, orientation);
+  EntityId id = entity_create(&level->entity_pool, (Entity){
+                                                       .type = ENTITY_ADDITION,
+                                                       .addition = addition,
+                                                   });
+  BOARD_AT(&level->board, pos.x, pos.y) = id;
+  BOARD_AT(&level->board, secondary.x, secondary.y) = id;
+  return 1;
+}
+
 int level_remove(Level *level, Vector2i pos) {
   EntityId id = BOARD_AT(&level->board, pos.x, pos.y);
   if (id == 0) {
@@ -408,6 +467,15 @@ int level_remove(Level *level, Vector2i pos) {
     BOARD_AT(&level->board, pos.x, pos.y) = ENTITY_NONE;
     entity_destroy(&level->entity_pool, id);
     return 1;
+  case ENTITY_ADDITION: {
+    Vector2i secondary =
+        vector_add(entity->addition.position,
+                   orientation_vector(entity->addition.orientation));
+    BOARD_AT(&level->board, pos.x, pos.y) = ENTITY_NONE;
+    BOARD_AT(&level->board, secondary.x, secondary.y) = ENTITY_NONE;
+    entity_destroy(&level->entity_pool, id);
+    return 1;
+  }
   default:
     return 0;
   }

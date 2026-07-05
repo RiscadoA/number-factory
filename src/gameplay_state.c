@@ -21,6 +21,7 @@ enum {
 typedef enum {
   PLACEMENT_PIPE,
   PLACEMENT_SPLITTER,
+  PLACEMENT_ADDITION,
 } PlacementMode;
 
 typedef struct {
@@ -39,6 +40,7 @@ typedef struct {
   TTF_Font *font;
   TextTexture pipe_label;
   TextTexture splitter_label;
+  TextTexture addition_label;
   TextTexture rotate_label;
   TextTexture pause_label;
   TextTexture health_label;
@@ -110,6 +112,7 @@ static int text_texture_init(TextTexture *text, NumberFactory *game,
 static void gameplay_hud_free(GameplayHud *hud) {
   text_texture_free(&hud->pipe_label);
   text_texture_free(&hud->splitter_label);
+  text_texture_free(&hud->addition_label);
   text_texture_free(&hud->rotate_label);
   text_texture_free(&hud->pause_label);
   text_texture_free(&hud->health_label);
@@ -123,6 +126,7 @@ static int gameplay_hud_init(GameplayHud *hud, NumberFactory *game) {
   if (!hud->font ||
       !text_texture_init(&hud->pipe_label, game, hud->font, "1 PIPE") ||
       !text_texture_init(&hud->splitter_label, game, hud->font, "2 SPLITTER") ||
+      !text_texture_init(&hud->addition_label, game, hud->font, "3 ADDITION") ||
       !text_texture_init(&hud->rotate_label, game, hud->font,
                          "R/WHEEL ROTATE") ||
       !text_texture_init(&hud->pause_label, game, hud->font, "ESC PAUSE") ||
@@ -174,12 +178,15 @@ static void gameplay_hud_render(GameplayState *state, NumberFactory *game) {
 
   SDL_FRect pipe_button = {8.0f, 6.0f, 72.0f, 32.0f};
   SDL_FRect filter_button = {86.0f, 6.0f, 92.0f, 32.0f};
-  SDL_FRect rotate_hint = {184.0f, 6.0f, 152.0f, 32.0f};
-  SDL_FRect pause_hint = {342.0f, 6.0f, 102.0f, 32.0f};
+  SDL_FRect addition_button = {184.0f, 6.0f, 106.0f, 32.0f};
+  SDL_FRect rotate_hint = {296.0f, 6.0f, 152.0f, 32.0f};
+  SDL_FRect pause_hint = {454.0f, 6.0f, 102.0f, 32.0f};
   gameplay_hud_draw_button(game, &state->hud.pipe_label, pipe_button,
                            state->placement_mode == PLACEMENT_PIPE);
   gameplay_hud_draw_button(game, &state->hud.splitter_label, filter_button,
                            state->placement_mode == PLACEMENT_SPLITTER);
+  gameplay_hud_draw_button(game, &state->hud.addition_label, addition_button,
+                           state->placement_mode == PLACEMENT_ADDITION);
   gameplay_hud_draw_button(game, &state->hud.rotate_label, rotate_hint, 0);
   gameplay_hud_draw_button(game, &state->hud.pause_label, pause_hint, 0);
 
@@ -344,6 +351,34 @@ static void draw_orientation_arrow(SDL_Renderer *renderer, SDL_FRect cell,
     SDL_FRect block = {
         .x = center_x + x * block_size,
         .y = center_y + y * block_size,
+        .w = block_size,
+        .h = block_size,
+    };
+    SDL_RenderFillRect(renderer, &block);
+  }
+}
+
+static void draw_pipe_direction_arrow(SDL_Renderer *renderer, float center_x,
+                                      float center_y, Orientation orientation,
+                                      float cell_size) {
+  Vector2i direction = orientation_vector(orientation);
+  Vector2i perpendicular = {.x = -direction.y, .y = direction.x};
+  float block_size = cell_size * 0.06f;
+  float cx = center_x - block_size / 2.0f;
+  float cy = center_y - block_size / 2.0f;
+
+  Vector2i blocks[] = {
+      {.x = 1, .y = 0},   // tip
+      {.x = 0, .y = -1}, {.x = 0, .y = 0}, {.x = 0, .y = 1},
+      {.x = -1, .y = -1}, {.x = -1, .y = 0}, {.x = -1, .y = 1},
+  };
+
+  for (int i = 0; i < 7; i++) {
+    int x = blocks[i].x * direction.x + blocks[i].y * perpendicular.x;
+    int y = blocks[i].x * direction.y + blocks[i].y * perpendicular.y;
+    SDL_FRect block = {
+        .x = cx + x * block_size,
+        .y = cy + y * block_size,
         .w = block_size,
         .h = block_size,
     };
@@ -567,87 +602,192 @@ static void draw_splitter(NumberFactory *game, SDL_FRect cell,
   draw_orientation_arrow(game->renderer, cell, splitter->orientation);
 }
 
-static void draw_pipe_layer(SDL_Renderer *renderer, GameplayState *state,
-                            Pipe *pipe, float width) {
-  float half_cell = state->cell_size * 0.5f;
+static int entity_has_output_to(Entity *entity, Vector2i entity_pos,
+                                Vector2i target_pos) {
+  Vector2i diff = vector_subtract(target_pos, entity_pos);
+  Orientation dir = vector_orientation(diff);
+  if (dir < 0)
+    return 0;
 
-  for (int i = 0; i < pipe->cells.size; i++) {
-    PipeCell cell = DEQUE_AT(pipe->cells, i);
-    Vector2i output = orientation_vector(cell.orientation);
-    Vector2i input;
-    if (i == 0) {
-      input = orientation_vector(orientation_opposite(cell.orientation));
-    } else {
-      PipeCell previous = DEQUE_AT(pipe->cells, i - 1);
-      Vector2i previous_output = orientation_vector(previous.orientation);
-      input = (Vector2i){-previous_output.x, -previous_output.y};
+  switch (entity->type) {
+  case ENTITY_PIPE: {
+    Orientation o = pipe_orientation(&entity->pipe, entity_pos);
+    return o == dir;
+  }
+  case ENTITY_INPUT:
+    return entity->input.orientation == dir;
+  case ENTITY_SPLITTER:
+    return dir != orientation_opposite(entity->splitter.orientation);
+  case ENTITY_ADDITION: {
+    Vector2i secondary = vector_add(entity->addition.position,
+                                    orientation_vector(entity->addition.orientation));
+    if (vector_equal(entity_pos, secondary)) {
+      Vector2i output_pos =
+          vector_add(secondary, orientation_vector(entity->addition.orientation));
+      if (vector_equal(target_pos, output_pos)) {
+        return entity->addition.orientation == dir;
+      }
     }
-
-    float center_x =
-        state->board_offset_x + (cell.pos.x + 0.5f) * state->cell_size;
-    float center_y =
-        state->board_offset_y + (cell.pos.y + 0.5f) * state->cell_size;
-    draw_pipe_half_segment(renderer, center_x, center_y, input, half_cell,
-                           width);
-    draw_pipe_half_segment(renderer, center_x, center_y, output, half_cell,
-                           width);
-
-    SDL_FRect joint = {
-        center_x - width / 2.0f,
-        center_y - width / 2.0f,
-        width,
-        width,
-    };
-    SDL_RenderFillRect(renderer, &joint);
+    return 0;
+  }
+  case ENTITY_OUTPUT:
+    return 0;
+  default:
+    return 0;
   }
 }
 
-static void draw_pipe_direction_markers(SDL_Renderer *renderer,
-                                        GameplayState *state, Pipe *pipe) {
-  float block_size = state->cell_size * 0.055f;
-  float forward = state->cell_size * 0.1f;
-  float sideways = state->cell_size * 0.075f;
-
-  for (int i = 0; i < pipe->cells.size; i++) {
-    PipeCell cell = DEQUE_AT(pipe->cells, i);
-    Vector2i direction = orientation_vector(cell.orientation);
-    Vector2i perpendicular = {-direction.y, direction.x};
-    float center_x =
-        state->board_offset_x + (cell.pos.x + 0.5f) * state->cell_size;
-    float center_y =
-        state->board_offset_y + (cell.pos.y + 0.5f) * state->cell_size;
-
-    Vector2f offsets[] = {
-        {direction.x * forward, direction.y * forward},
-        {-direction.x * forward * 0.35f + perpendicular.x * sideways,
-         -direction.y * forward * 0.35f + perpendicular.y * sideways},
-        {-direction.x * forward * 0.35f - perpendicular.x * sideways,
-         -direction.y * forward * 0.35f - perpendicular.y * sideways},
-    };
-    for (int j = 0; j < 3; j++) {
-      SDL_FRect block = {
-          center_x + offsets[j].x - block_size / 2.0f,
-          center_y + offsets[j].y - block_size / 2.0f,
-          block_size,
-          block_size,
-      };
-      SDL_RenderFillRect(renderer, &block);
-    }
-  }
-}
-
-static void draw_pipe(NumberFactory *game, GameplayState *state, Pipe *pipe) {
+static void draw_pipe_cell(NumberFactory *game, GameplayState *state,
+                           Vector2i pos, Pipe *pipe) {
   float casing_width = state->cell_size * 0.38f;
   float channel_width = state->cell_size * 0.24f;
+  float half_cell = state->cell_size * 0.5f;
 
+  Orientation orientation = pipe_orientation(pipe, pos);
+  if (orientation < 0)
+    return;
+
+  float center_x =
+      state->board_offset_x + (pos.x + 0.5f) * state->cell_size;
+  float center_y =
+      state->board_offset_y + (pos.y + 0.5f) * state->cell_size;
+
+  int active[ORIENTATION_COUNT] = {0};
+  active[orientation] = 1;
+  for (Orientation d = ORIENTATION_ZERO; d < ORIENTATION_COUNT; d++) {
+    if (d == orientation)
+      continue;
+    Vector2i neighbor_pos = vector_add(pos, orientation_vector(d));
+    if (BOARD_VALID(&state->level.board, neighbor_pos.x, neighbor_pos.y)) {
+      EntityId nid =
+          BOARD_AT(&state->level.board, neighbor_pos.x, neighbor_pos.y);
+      if (nid != ENTITY_NONE) {
+        Entity *neighbor = ENTITY_AT(&state->level.entity_pool, nid);
+        if (entity_has_output_to(neighbor, neighbor_pos, pos)) {
+          active[d] = 1;
+        }
+      }
+    }
+  }
+
+  // Draw casing arms
   SDL_SetRenderDrawColor(game->renderer, 55, 40, 50, 255);
-  draw_pipe_layer(game->renderer, state, pipe, casing_width);
+  for (Orientation d = ORIENTATION_ZERO; d < ORIENTATION_COUNT; d++) {
+    if (active[d]) {
+      draw_pipe_half_segment(game->renderer, center_x, center_y,
+                             orientation_vector(d), half_cell, casing_width);
+    }
+  }
 
+  // Draw channel arms
   SDL_SetRenderDrawColor(game->renderer, 185, 175, 165, 255);
-  draw_pipe_layer(game->renderer, state, pipe, channel_width);
+  for (Orientation d = ORIENTATION_ZERO; d < ORIENTATION_COUNT; d++) {
+    if (active[d]) {
+      draw_pipe_half_segment(game->renderer, center_x, center_y,
+                             orientation_vector(d), half_cell, channel_width);
+    }
+  }
 
-  SDL_SetRenderDrawColor(game->renderer, 255, 245, 235, 210);
-  draw_pipe_direction_markers(game->renderer, state, pipe);
+  // At L-corners the casing arms overlap in the inner corner, creating a dark
+  // joint. Fill that overlap with channel color so the bend looks clean.
+  struct {
+    Orientation a, b;
+    float x, y;
+  } inner[4] = {
+      {NORTH, EAST,  center_x, center_y - casing_width / 2.0f},
+      {EAST,  SOUTH, center_x, center_y},
+      {SOUTH, WEST,  center_x - casing_width / 2.0f, center_y},
+      {WEST,  NORTH, center_x - casing_width / 2.0f, center_y - casing_width / 2.0f},
+  };
+  float inner_size = casing_width / 2.0f;
+  SDL_SetRenderDrawColor(game->renderer, 185, 175, 165, 255);
+  for (int i = 0; i < 4; i++) {
+    if (active[inner[i].a] && active[inner[i].b]) {
+      SDL_FRect fill = {inner[i].x, inner[i].y, inner_size, inner_size};
+      SDL_RenderFillRect(game->renderer, &fill);
+    }
+  }
+
+  // At L-corners the half-segments are thin strips from center to two edges.
+  // They leave the diagonally-opposite cell corner uncovered. Patch it.
+  struct {
+    Orientation a, b;
+    float x, y;
+  } corners[4] = {
+      // NORTH+EAST → top-right is outer
+      {NORTH, EAST,  center_x + casing_width / 2.0f, center_y - half_cell},
+      // EAST+SOUTH → bottom-right is outer
+      {EAST,  SOUTH, center_x + casing_width / 2.0f, center_y + casing_width / 2.0f},
+      // SOUTH+WEST → bottom-left is outer
+      {SOUTH, WEST,  center_x - half_cell, center_y + casing_width / 2.0f},
+      // WEST+NORTH → top-left is outer
+      {WEST,  NORTH, center_x - half_cell, center_y - half_cell},
+  };
+
+  float casing_patch = half_cell - casing_width / 2.0f;
+  SDL_SetRenderDrawColor(game->renderer, 55, 40, 50, 255);
+  for (int i = 0; i < 4; i++) {
+    if (active[corners[i].a] && active[corners[i].b]) {
+      SDL_FRect patch = {corners[i].x, corners[i].y, casing_patch, casing_patch};
+      SDL_RenderFillRect(game->renderer, &patch);
+    }
+  }
+
+  struct {
+    Orientation a, b;
+    float x, y;
+  } ch_corners[4] = {
+      {NORTH, EAST,  center_x + channel_width / 2.0f, center_y - half_cell},
+      {EAST,  SOUTH, center_x + channel_width / 2.0f, center_y + channel_width / 2.0f},
+      {SOUTH, WEST,  center_x - half_cell, center_y + channel_width / 2.0f},
+      {WEST,  NORTH, center_x - half_cell, center_y - half_cell},
+  };
+
+  float channel_patch = half_cell - channel_width / 2.0f;
+  SDL_SetRenderDrawColor(game->renderer, 185, 175, 165, 255);
+  for (int i = 0; i < 4; i++) {
+    if (active[ch_corners[i].a] && active[ch_corners[i].b]) {
+      SDL_FRect patch = {ch_corners[i].x, ch_corners[i].y,
+                         channel_patch, channel_patch};
+      SDL_RenderFillRect(game->renderer, &patch);
+    }
+  }
+
+  // Direction arrow
+  SDL_SetRenderDrawColor(game->renderer, 255, 245, 235, 255);
+  draw_pipe_direction_arrow(game->renderer, center_x, center_y, orientation,
+                            state->cell_size);
+}
+
+static void draw_addition(NumberFactory *game, SDL_FRect rect,
+                          Addition *addition, Vector2i cell_pos) {
+  SDL_SetRenderDrawColor(game->renderer, 100, 150, 200, 255);
+  SDL_RenderFillRect(game->renderer, &rect);
+
+  SDL_SetRenderDrawColor(game->renderer, 60, 90, 120, 255);
+  SDL_RenderRect(game->renderer, &rect);
+
+  Vector2i primary = addition->position;
+  Vector2i secondary =
+      vector_add(primary, orientation_vector(addition->orientation));
+
+  if (vector_equal(cell_pos, primary)) {
+    draw_orientation_arrow(game->renderer, rect, addition->orientation);
+  }
+
+  if (vector_equal(cell_pos, secondary)) {
+    draw_orientation_arrow(
+        game->renderer, rect,
+        orientation_opposite(orientation_clockwise(addition->orientation)));
+    draw_orientation_arrow(game->renderer, rect, addition->orientation);
+  }
+
+  float cx = rect.x + rect.w * 0.5f;
+  float cy = rect.y + rect.h * 0.5f;
+  float r = rect.w * 0.12f;
+  SDL_SetRenderDrawColor(game->renderer, 255, 255, 255, 255);
+  SDL_FRect center = {cx - r, cy - r, r * 2, r * 2};
+  SDL_RenderFillRect(game->renderer, &center);
 }
 
 static void gameplay_state_destroy(GameState *base, NumberFactory *game) {
@@ -691,6 +831,10 @@ static SDL_AppResult gameplay_state_event(GameState *base, NumberFactory *game,
     case SDLK_KP_2:
       state->placement_mode = PLACEMENT_SPLITTER;
       break;
+    case SDLK_3:
+    case SDLK_KP_3:
+      state->placement_mode = PLACEMENT_ADDITION;
+      break;
     case SDLK_R:
       rotate_orientation(state, 1);
       break;
@@ -726,6 +870,9 @@ static SDL_AppResult gameplay_state_event(GameState *base, NumberFactory *game,
             break;
           case PLACEMENT_SPLITTER:
             level_place_splitter(&state->level, cell, state->orientation);
+            break;
+          case PLACEMENT_ADDITION:
+            level_place_addition(&state->level, cell, state->orientation);
             break;
         }
       } else {
@@ -797,9 +944,7 @@ static void gameplay_state_render(GameState *base, NumberFactory *game) {
       switch (entity->type) {
       case ENTITY_PIPE: {
         Pipe *pipe = &entity->pipe;
-        if (pipe_is_start_cell(pipe, (Vector2i){x, y}) != 1) break;
-        if (pipe->cells.size == 0) break;
-        draw_pipe(game, state, pipe);
+        draw_pipe_cell(game, state, (Vector2i){x, y}, pipe);
         break;
       }
       case ENTITY_NONE:
@@ -817,6 +962,11 @@ static void gameplay_state_render(GameState *base, NumberFactory *game) {
       case ENTITY_SPLITTER: {
         Splitter *splitter = &entity->splitter;
         draw_splitter(game, rect, splitter);
+        break;
+      }
+      case ENTITY_ADDITION: {
+        Addition *addition = &entity->addition;
+        draw_addition(game, rect, addition, (Vector2i){x, y});
         break;
       }
       }
@@ -852,6 +1002,12 @@ static void gameplay_state_render(GameState *base, NumberFactory *game) {
         splitter_for_each_item_position(splitter, draw_item_callback, &data);
         break;
       }
+      case ENTITY_ADDITION: {
+        Addition *addition = &entity->addition;
+        DrawItemCallbackData data = {game, state};
+        addition_for_each_item_position(addition, draw_item_callback, &data);
+        break;
+      }
       case ENTITY_NONE:
         break;
       case ENTITY_OUTPUT:
@@ -875,13 +1031,36 @@ static void gameplay_state_render(GameState *base, NumberFactory *game) {
         .w = state->cell_size,
         .h = state->cell_size,
     };
-    if (state->placement_mode == PLACEMENT_SPLITTER) {
+    if (state->placement_mode == PLACEMENT_ADDITION) {
+      SDL_SetRenderDrawColor(game->renderer, 100, 150, 200, 48);
+    } else if (state->placement_mode == PLACEMENT_SPLITTER) {
       SDL_SetRenderDrawColor(game->renderer, 80, 255, 255, 48);
     } else {
       SDL_SetRenderDrawColor(game->renderer, 255, 255, 255, 48);
     }
     SDL_RenderFillRect(game->renderer, &preview);
-    if (state->placement_mode == PLACEMENT_SPLITTER) {
+
+    // Draw secondary cell preview for 2-cell machines
+    if (state->placement_mode == PLACEMENT_ADDITION) {
+      Vector2i secondary = vector_add(state->hovered_cell,
+                                      orientation_vector(state->orientation));
+      if (BOARD_VALID(&state->level.board, secondary.x, secondary.y)) {
+        SDL_FRect preview2 = {
+            .x = state->board_offset_x + secondary.x * state->cell_size,
+            .y = state->board_offset_y + secondary.y * state->cell_size,
+            .w = state->cell_size,
+            .h = state->cell_size,
+        };
+        SDL_SetRenderDrawColor(game->renderer, 100, 150, 200, 48);
+        SDL_RenderFillRect(game->renderer, &preview2);
+        SDL_SetRenderDrawColor(game->renderer, 100, 150, 200, 192);
+        SDL_RenderRect(game->renderer, &preview2);
+      }
+    }
+
+    if (state->placement_mode == PLACEMENT_ADDITION) {
+      SDL_SetRenderDrawColor(game->renderer, 100, 150, 200, 192);
+    } else if (state->placement_mode == PLACEMENT_SPLITTER) {
       SDL_SetRenderDrawColor(game->renderer, 80, 255, 255, 192);
     } else {
       SDL_SetRenderDrawColor(game->renderer, 255, 255, 255, 192);

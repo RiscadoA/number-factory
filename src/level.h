@@ -35,6 +35,8 @@ int level_place_pipe(Level *level, Vector2i pos, Orientation orientation);
 
 int level_place_splitter(Level *level, Vector2i pos, Orientation orientation);
 
+int level_place_addition(Level *level, Vector2i pos, Orientation orientation);
+
 // Removes whatever is at the given position.
 int level_remove(Level *level, Vector2i pos);
 

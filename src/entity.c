@@ -11,6 +11,9 @@ static void entity_free(Entity *entity) {
   case ENTITY_SPLITTER:
     splitter_free(&entity->splitter);
     break;
+  case ENTITY_ADDITION:
+    addition_free(&entity->addition);
+    break;
   case ENTITY_INPUT:
     input_free(&entity->input);
     break;

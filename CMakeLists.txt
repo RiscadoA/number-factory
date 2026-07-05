@@ -44,6 +44,7 @@ add_executable(jam
   src/input.c
   src/output.c
   src/splitter.c
+  src/addition.c
   src/item.c
 )
 

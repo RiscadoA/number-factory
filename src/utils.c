@@ -85,3 +85,11 @@ int is_position_adjacent(Vector2i pos1, Vector2i pos2) {
   return (pos1.x == pos2.x && abs(pos1.y - pos2.y) == 1) ||
          (pos1.y == pos2.y && abs(pos1.x - pos2.x) == 1);
 }
+
+Orientation orientation_clockwise(Orientation orientation) {
+  return (Orientation)((orientation + 1) % ORIENTATION_COUNT);
+}
+
+int vector_equal(Vector2i a, Vector2i b) {
+  return a.x == b.x && a.y == b.y;
+}

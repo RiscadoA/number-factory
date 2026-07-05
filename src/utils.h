@@ -52,4 +52,8 @@ Vector2f vectori_to_f(Vector2i a);
 
 int is_position_adjacent(Vector2i pos1, Vector2i pos2);
 
+Orientation orientation_clockwise(Orientation orientation);
+
+int vector_equal(Vector2i a, Vector2i b);
+
 #endif
