@@ -159,6 +159,14 @@ void pipe_update(Pipe *pipe, int (*callback)(void *user, int value), void *user,
     PipeItem *item = &DEQUE_AT(pipe->items, i);
     item->distance_from_start += dt * ITEM_SPEED;
     item->distance_from_start = fminf(item->distance_from_start, max_distance);
+
+    // Update source orientation
+    if (item->distance_from_start - floorf(item->distance_from_start) > 0.5f) {
+      int cell_i =
+          MIN((int)floorf(item->distance_from_start), pipe->cells.size - 1);
+      item->source_orientation = DEQUE_AT(pipe->cells, cell_i).orientation;
+    }
+
     if (item->distance_from_start > (float)pipe->cells.size) {
       if (callback(user, item->value)) {
         pipe_item_deque_pop_back(&pipe->items);
@@ -210,7 +218,12 @@ Vector2i pipe_output_position(Pipe *pipe) {
   return vector_add(last_cell.pos, orientation_vector(last_cell.orientation));
 }
 
-int pipe_add_item(Pipe *pipe, Vector2i pos, int value) {
+Orientation pipe_output_orientation(Pipe *pipe) {
+  return DEQUE_AT(pipe->cells, pipe->cells.size - 1).orientation;
+}
+
+int pipe_add_item(Pipe *pipe, Vector2i pos, Orientation source_orientation,
+                  int value) {
   int index = position_to_index(pipe, pos);
   if (index < 0) {
     return 0;
@@ -230,9 +243,10 @@ int pipe_add_item(Pipe *pipe, Vector2i pos, int value) {
     }
   }
 
-  pipe_item_deque_insert(
-      &pipe->items, insert_index,
-      (PipeItem){.value = value, .distance_from_start = desired_distance});
+  pipe_item_deque_insert(&pipe->items, insert_index,
+                         (PipeItem){.value = value,
+                                    .distance_from_start = desired_distance,
+                                    .source_orientation = source_orientation});
   return 1;
 }
 
@@ -244,23 +258,15 @@ Vector2f pipe_item_position(Pipe *pipe, int index) {
   float cell_p = item.distance_from_start - (float)cell_i;
   PipeCell cell = DEQUE_AT(pipe->cells, cell_i);
 
-  // Compute the cell output position
+  // Compute the cell input and output positions
   Vector2f cell_center = (Vector2f){cell.pos.x + 0.5f, cell.pos.y + 0.5f};
   Vector2f cell_output_dir = vectori_to_f(orientation_vector(cell.orientation));
   Vector2f cell_output =
       vectorf_add(cell_center, vectorf_scale(cell_output_dir, 0.5f));
-
-  // Compute the cell input position
-  Vector2f cell_input;
-  if (cell_i > 0) {
-    PipeCell previous_cell = DEQUE_AT(pipe->cells, cell_i - 1);
-    Vector2f cell_input_dir =
-        vectori_to_f(orientation_vector(previous_cell.orientation));
-    cell_input =
-        vectorf_subtract(cell_center, vectorf_scale(cell_input_dir, 0.5f));
-  } else {
-    cell_input = vectorf_subtract(cell_output, cell_output_dir);
-  }
+  Vector2f cell_input_dir =
+      vectori_to_f(orientation_vector(item.source_orientation));
+  Vector2f cell_input =
+      vectorf_subtract(cell_center, vectorf_scale(cell_input_dir, 0.5f));
 
   // Compute the actual item position
   Vector2f out;

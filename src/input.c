@@ -17,7 +17,8 @@ void input_update(Input *input, int (*callback)(void *user, int value),
   input->time_accumulator += dt;
 
   if (input->progress > 0.0f) {
-    input->progress += dt * ITEM_SPEED;
+    // Multiplied by 2.0f as progress maps to half the usual distance
+    input->progress += dt * ITEM_SPEED * 2.0f;
 
     if (input->progress >= 1.0f) {
       if (callback(user, input->value)) {

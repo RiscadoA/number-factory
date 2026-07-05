@@ -26,7 +26,8 @@ void level_free(Level *level) {
   entity_pool_free(&level->entity_pool);
 }
 
-static int put_item_on(Level *level, Vector2i pos, int value) {
+static int put_item_on(Level *level, Vector2i pos, Orientation orientation,
+                       int value) {
   if (!BOARD_VALID(&level->board, pos.x, pos.y)) {
     return 0;
   }
@@ -40,7 +41,7 @@ static int put_item_on(Level *level, Vector2i pos, int value) {
   case ENTITY_NONE:
     return 0;
   case ENTITY_PIPE: {
-    return pipe_add_item(&ent->pipe, pos, value);
+    return pipe_add_item(&ent->pipe, pos, orientation, value);
   }
   case ENTITY_INPUT:
     return 0;
@@ -50,11 +51,12 @@ static int put_item_on(Level *level, Vector2i pos, int value) {
 typedef struct {
   Level *level;
   Vector2i output_pos;
+  Orientation orientation;
 } OutputItemArgs;
 
 static int output_item_callback(void *user, int value) {
   OutputItemArgs *args = (OutputItemArgs *)user;
-  return put_item_on(args->level, args->output_pos, value);
+  return put_item_on(args->level, args->output_pos, args->orientation, value);
 }
 
 void level_update(Level *level, float dt) {
@@ -65,13 +67,16 @@ void level_update(Level *level, float dt) {
       break;
     case ENTITY_PIPE: {
       OutputItemArgs args = {.level = level,
-                             .output_pos = pipe_output_position(&ent->pipe)};
+                             .output_pos = pipe_output_position(&ent->pipe),
+                             .orientation =
+                                 pipe_output_orientation(&ent->pipe)};
       pipe_update(&ent->pipe, output_item_callback, &args, dt);
       break;
     }
     case ENTITY_INPUT: {
       OutputItemArgs args = {.level = level,
-                             .output_pos = input_output_position(&ent->input)};
+                             .output_pos = input_output_position(&ent->input),
+                             .orientation = ent->input.orientation};
       input_update(&ent->input, output_item_callback, &args, dt);
       break;
     }
