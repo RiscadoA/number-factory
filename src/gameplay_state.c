@@ -4,6 +4,7 @@
 #include <stdlib.h>
 
 #include "game.h"
+#include "input.h"
 #include "level.h"
 #include "pipe.h"
 
@@ -16,6 +17,7 @@ typedef struct {
   Vector2i hovered_cell;
   int has_hovered_cell;
   Orientation orientation;
+  Uint64 last_ticks;
 } GameplayState;
 
 static int screen_to_board_cell(GameplayState *state, float x, float y,
@@ -64,6 +66,19 @@ static void draw_orientation_arrow(SDL_Renderer *renderer, SDL_FRect cell,
   }
 }
 
+static void draw_item(NumberFactory *game, GameplayState *state, Vector2f pos,
+                      int value) {
+  (void)value;
+  float size = state->cell_size * 0.25f;
+  float x = state->board_offset_x + pos.x * state->cell_size - size / 2.0f;
+  float y = state->board_offset_y + pos.y * state->cell_size - size / 2.0f;
+  SDL_FRect rect = {x, y, size, size};
+  SDL_SetRenderDrawColor(game->renderer, 255, 255, 255, 255);
+  SDL_RenderFillRect(game->renderer, &rect);
+  SDL_SetRenderDrawColor(game->renderer, 0, 0, 0, 255);
+  SDL_RenderRect(game->renderer, &rect);
+}
+
 static void gameplay_state_destroy(GameState *base, NumberFactory *game) {
   (void)game;
   GameplayState *state = (GameplayState *)base;
@@ -107,8 +122,14 @@ static SDL_AppResult gameplay_state_event(GameState *base, NumberFactory *game,
 
 static SDL_AppResult gameplay_state_update(GameState *base,
                                            NumberFactory *game) {
-  (void)base;
   (void)game;
+  GameplayState *state = (GameplayState *)base;
+
+  Uint64 now = SDL_GetTicks();
+  float dt = (now - state->last_ticks) / 1000.0f;
+  state->last_ticks = now;
+
+  level_update(&state->level, dt);
   return SDL_APP_CONTINUE;
 }
 
@@ -123,6 +144,12 @@ static void gameplay_state_render(GameState *base, NumberFactory *game) {
       EntityId id = BOARD_AT(&state->level.board, x, y);
       if (id == 0) continue;
       Entity *entity = ENTITY_AT(&state->level.entity_pool, id);
+      SDL_FRect rect = {
+          .x = state->board_offset_x + x * state->cell_size,
+          .y = state->board_offset_y + y * state->cell_size,
+          .w = state->cell_size,
+          .h = state->cell_size,
+      };
       switch (entity->type) {
       case ENTITY_PIPE: {
         Pipe *pipe = &entity->pipe;
@@ -173,6 +200,50 @@ static void gameplay_state_render(GameState *base, NumberFactory *game) {
       }
       case ENTITY_NONE:
         break;
+      case ENTITY_INPUT: {
+        Input *input = &entity->input;
+        SDL_SetRenderDrawColor(game->renderer, 80, 160, 220, 255);
+        SDL_RenderFillRect(game->renderer, &rect);
+        SDL_SetRenderDrawColor(game->renderer, 40, 80, 120, 255);
+        SDL_RenderRect(game->renderer, &rect);
+        SDL_SetRenderDrawColor(game->renderer, 255, 255, 255, 255);
+        draw_orientation_arrow(game->renderer, rect, input->orientation);
+        break;
+      }
+      }
+    }
+  }
+
+  // Second pass: render items on top of all entity geometry
+  for (int x = 0; x < state->level.board.width; x++) {
+    for (int y = 0; y < state->level.board.height; y++) {
+      EntityId id = BOARD_AT(&state->level.board, x, y);
+      if (id == 0) continue;
+      Entity *entity = ENTITY_AT(&state->level.entity_pool, id);
+
+      switch (entity->type) {
+      case ENTITY_PIPE: {
+        Pipe *pipe = &entity->pipe;
+        if (pipe_is_start_cell(pipe, (Vector2i){x, y}) != 1) break;
+        if (pipe->cells.size == 0) break;
+
+        for (int i = 0; i < pipe->items.size; i++) {
+          PipeItem item = DEQUE_AT(pipe->items, i);
+          Vector2f pos = pipe_item_position(pipe, i);
+          draw_item(game, state, pos, item.value);
+        }
+        break;
+      }
+      case ENTITY_INPUT: {
+        Input *input = &entity->input;
+        if (input->progress > 0.0f) {
+          Vector2f pos = input_item_position(input);
+          draw_item(game, state, pos, input->value);
+        }
+        break;
+      }
+      case ENTITY_NONE:
+        break;
       }
     }
   }
@@ -202,6 +273,7 @@ GameState *gameplay_state_create(NumberFactory *game) {
 
   level_init(&state->level);
   state->orientation = NORTH;
+  state->last_ticks = SDL_GetTicks();
   float cell_width = (float)GAME_WIDTH / state->level.board.width;
   float cell_height = (float)GAME_HEIGHT / state->level.board.height;
   state->cell_size = cell_width < cell_height ? cell_width : cell_height;

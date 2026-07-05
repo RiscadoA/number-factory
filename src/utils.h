@@ -40,6 +40,16 @@ Vector2i vector_subtract(Vector2i a, Vector2i b);
 
 Vector2i vector_add(Vector2i a, Vector2i b);
 
+Vector2f vectorf_subtract(Vector2f a, Vector2f b);
+
+Vector2f vectorf_add(Vector2f a, Vector2f b);
+
+Vector2f vectorf_scale(Vector2f a, float scalar);
+
+Vector2f vectorf_lerp(Vector2f a, Vector2f b, float t);
+
+Vector2f vectori_to_f(Vector2i a);
+
 int is_position_adjacent(Vector2i pos1, Vector2i pos2);
 
 #endif

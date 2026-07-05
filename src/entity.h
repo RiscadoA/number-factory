@@ -2,6 +2,7 @@
 #define ENTITY_H
 
 #include "pipe.h"
+#include "input.h"
 
 typedef int EntityId;
 
@@ -9,12 +10,14 @@ typedef enum {
   // Reserved for uninitialized entities
   ENTITY_NONE,
   ENTITY_PIPE,
+  ENTITY_INPUT,
 } EntityType;
 
 typedef struct {
   EntityType type;
   union {
     Pipe pipe;
+    Input input;
   };
 } Entity;
 

@@ -40,6 +40,8 @@ add_executable(jam
   src/board.c
   src/entity.c
   src/pipe.c
+  src/input.c
+  src/splitter.c
 )
 
 find_package(SDL3 REQUIRED)

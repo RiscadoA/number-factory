@@ -27,8 +27,10 @@
 #define DEQUE_PUSH_FRONT_FUNCTION                                              \
   DEQUE_CONCAT(DEQUE_FUNCTION_PREFIX, _push_front)
 #define DEQUE_PUSH_BACK_FUNCTION DEQUE_CONCAT(DEQUE_FUNCTION_PREFIX, _push_back)
+#define DEQUE_INSERT_FUNCTION DEQUE_CONCAT(DEQUE_FUNCTION_PREFIX, _insert)
 #define DEQUE_POP_FRONT_FUNCTION DEQUE_CONCAT(DEQUE_FUNCTION_PREFIX, _pop_front)
 #define DEQUE_POP_BACK_FUNCTION DEQUE_CONCAT(DEQUE_FUNCTION_PREFIX, _pop_back)
+#define DEQUE_REMOVE_FUNCTION DEQUE_CONCAT(DEQUE_FUNCTION_PREFIX, _remove)
 #define DEQUE_FRONT_FUNCTION DEQUE_CONCAT(DEQUE_FUNCTION_PREFIX, _front)
 #define DEQUE_BACK_FUNCTION DEQUE_CONCAT(DEQUE_FUNCTION_PREFIX, _back)
 #define DEQUE_CLEAR_FUNCTION DEQUE_CONCAT(DEQUE_FUNCTION_PREFIX, _clear)
@@ -47,8 +49,10 @@ void DEQUE_FREE_FUNCTION(DEQUE_TYPE *deque);
 void DEQUE_RESERVE_FUNCTION(DEQUE_TYPE *deque, int extra_capacity);
 void DEQUE_PUSH_FRONT_FUNCTION(DEQUE_TYPE *deque, DEQUE_ELEMENT_TYPE value);
 void DEQUE_PUSH_BACK_FUNCTION(DEQUE_TYPE *deque, DEQUE_ELEMENT_TYPE value);
+void DEQUE_INSERT_FUNCTION(DEQUE_TYPE *deque, int index, DEQUE_ELEMENT_TYPE value);
 DEQUE_ELEMENT_TYPE DEQUE_POP_FRONT_FUNCTION(DEQUE_TYPE *deque);
 DEQUE_ELEMENT_TYPE DEQUE_POP_BACK_FUNCTION(DEQUE_TYPE *deque);
+DEQUE_ELEMENT_TYPE DEQUE_REMOVE_FUNCTION(DEQUE_TYPE *deque, int index);
 DEQUE_ELEMENT_TYPE DEQUE_FRONT_FUNCTION(DEQUE_TYPE *deque);
 DEQUE_ELEMENT_TYPE DEQUE_BACK_FUNCTION(DEQUE_TYPE *deque);
 void DEQUE_CLEAR_FUNCTION(DEQUE_TYPE *deque);
@@ -112,6 +116,22 @@ void DEQUE_PUSH_BACK_FUNCTION(DEQUE_TYPE *deque, DEQUE_ELEMENT_TYPE value) {
   deque->size++;
 }
 
+void DEQUE_INSERT_FUNCTION(DEQUE_TYPE *deque, int index, DEQUE_ELEMENT_TYPE value) {
+  if (index < 0 || index > deque->size) {
+    fprintf(stderr, "index out of bounds\n");
+    exit(1);
+  }
+  if (deque->size == deque->capacity) {
+    DEQUE_RESERVE_FUNCTION(deque, deque->capacity);
+  }
+  for (int i = deque->size - 1; i >= index; i--) {
+    deque->buffer[(deque->first + i + 1) % deque->capacity] =
+        deque->buffer[(deque->first + i) % deque->capacity];
+  }
+  deque->buffer[(deque->first + index) % deque->capacity] = value;
+  deque->size++;
+}
+
 DEQUE_ELEMENT_TYPE DEQUE_POP_FRONT_FUNCTION(DEQUE_TYPE *deque) {
   if (deque->size == 0) {
     fprintf(stderr, "deque is empty\n");
@@ -130,6 +150,20 @@ DEQUE_ELEMENT_TYPE DEQUE_POP_BACK_FUNCTION(DEQUE_TYPE *deque) {
   }
   DEQUE_ELEMENT_TYPE value =
       deque->buffer[(deque->first + deque->size - 1) % deque->capacity];
+  deque->size--;
+  return value;
+}
+
+DEQUE_ELEMENT_TYPE DEQUE_REMOVE_FUNCTION(DEQUE_TYPE *deque, int index) {
+  if (index < 0 || index >= deque->size) {
+    fprintf(stderr, "index out of bounds\n");
+    exit(1);
+  }
+  DEQUE_ELEMENT_TYPE value = deque->buffer[(deque->first + index) % deque->capacity];
+  for (int i = index; i < deque->size - 1; i++) {
+    deque->buffer[(deque->first + i) % deque->capacity] =
+        deque->buffer[(deque->first + i + 1) % deque->capacity];
+  }
   deque->size--;
   return value;
 }

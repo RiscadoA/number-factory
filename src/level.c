@@ -1,6 +1,7 @@
 #include "level.h"
 #include "board.h"
 #include "entity.h"
+#include "input.h"
 #include "pipe.h"
 #include "utils.h"
 
@@ -9,11 +10,93 @@
 void level_init(Level *level) {
   board_init(&level->board, 12, 8);
   entity_pool_init(&level->entity_pool, 12 * 8);
+
+  // Init input
+  Input input;
+  input_init(&input, (Vector2i){1, 4}, EAST, 5, 1.0f);
+  EntityId id = entity_create(&level->entity_pool, (Entity){
+                                                       .type = ENTITY_INPUT,
+                                                       .input = input,
+                                                   });
+  BOARD_AT(&level->board, input.position.x, input.position.y) = id;
 }
 
 void level_free(Level *level) {
   board_free(&level->board);
   entity_pool_free(&level->entity_pool);
+}
+
+static int can_put_item_on(Level *level, Vector2i pos) {
+  if (!BOARD_VALID(&level->board, pos.x, pos.y)) {
+    return 0;
+  }
+  EntityId id = BOARD_AT(&level->board, pos.x, pos.y);
+  if (id == ENTITY_NONE) {
+    return 0;
+  }
+
+  Entity *ent = ENTITY_AT(&level->entity_pool, id);
+  switch (ent->type) {
+  case ENTITY_NONE:
+    return 0;
+  case ENTITY_PIPE:
+    return pipe_can_add_item(&ent->pipe, pos);
+  case ENTITY_INPUT:
+    return 0;
+  }
+}
+
+static int put_item_on(Level *level, Vector2i pos, int value) {
+  if (!BOARD_VALID(&level->board, pos.x, pos.y)) {
+    return 0;
+  }
+  EntityId id = BOARD_AT(&level->board, pos.x, pos.y);
+  if (id == ENTITY_NONE) {
+    return 0;
+  }
+
+  Entity *ent = ENTITY_AT(&level->entity_pool, id);
+  switch (ent->type) {
+  case ENTITY_NONE:
+    return 0;
+  case ENTITY_PIPE: {
+    return pipe_add_item(&ent->pipe, pos, value);
+  }
+  case ENTITY_INPUT:
+    return 0;
+  }
+}
+
+void level_update(Level *level, float dt) {
+  for (int i = 0; i < level->entity_pool.capacity; ++i) {
+    Entity *ent = ENTITY_AT(&level->entity_pool, i);
+    switch (ent->type) {
+    case ENTITY_NONE:
+      break;
+    case ENTITY_PIPE: {
+      Vector2i output_pos = pipe_output_position(&ent->pipe);
+      int can_output = can_put_item_on(level, output_pos);
+      int value = pipe_update(&ent->pipe, can_output, dt);
+      if (value != 0) {
+        if (!put_item_on(level, output_pos, value)) {
+          fprintf(stderr, "Could not place item on output position\n");
+        }
+      }
+      break;
+    }
+    case ENTITY_INPUT: {
+      Vector2i output_pos = input_output_position(&ent->input);
+      int can_output = can_put_item_on(level, output_pos);
+      int value = input_update(&ent->input, dt, can_output);
+      if (value != 0) {
+        if (!put_item_on(level, output_pos, value)) {
+          fprintf(stderr, "Could not place item on output position\n");
+        }
+      }
+      break;
+    }
+    }
+  }
 }
 
 int level_place_pipe(Level *level, Vector2i pos, Orientation orientation) {

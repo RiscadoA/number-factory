@@ -59,6 +59,14 @@ int pipe_is_start_cell(Pipe *pipe, Vector2i pos);
 // Checks if the given cell has an aligned input cell.
 int pipe_is_turn_cell(Pipe *pipe, Vector2i pos);
 
+Vector2i pipe_output_position(Pipe *pipe);
+
+int pipe_can_add_item(Pipe *pipe, Vector2i pos);
+
+int pipe_add_item(Pipe *pipe, Vector2i pos, int value);
+
+Vector2f pipe_item_position(Pipe *pipe, int index);
+
 void pipe_debug(Pipe *pipe);
 
 #endif

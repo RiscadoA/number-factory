@@ -2,7 +2,7 @@
 #define CONSTANTS_H
 
 // Minimum gap between items
-#define ITEM_GAP 1.0f
+#define ITEM_GAP 0.25f
 
 // Speed at which items move
 #define ITEM_SPEED 1.0f
