@@ -312,6 +312,62 @@ static void draw_pipe_half_segment(SDL_Renderer *renderer, float center_x,
   SDL_RenderFillRect(renderer, &segment);
 }
 
+static void draw_input(NumberFactory *game, SDL_FRect cell, Input *input) {
+  float center_x = cell.x + cell.w / 2.0f;
+  float center_y = cell.y + cell.h / 2.0f;
+  Vector2i direction = orientation_vector(input->orientation);
+
+  SDL_SetRenderDrawColor(game->renderer, 55, 40, 50, 255);
+  draw_pipe_half_segment(game->renderer, center_x, center_y, direction,
+                         cell.w * 0.5f, cell.w * 0.38f);
+  SDL_SetRenderDrawColor(game->renderer, 90, 175, 220, 255);
+  draw_pipe_half_segment(game->renderer, center_x, center_y, direction,
+                         cell.w * 0.5f, cell.w * 0.24f);
+
+  float casing_padding = cell.w * 0.14f;
+  SDL_FRect casing = {
+      .x = cell.x + casing_padding,
+      .y = cell.y + casing_padding,
+      .w = cell.w - casing_padding * 2.0f,
+      .h = cell.h - casing_padding * 2.0f,
+  };
+  SDL_SetRenderDrawColor(game->renderer, 55, 40, 50, 255);
+  SDL_RenderFillRect(game->renderer, &casing);
+
+  float panel_padding = cell.w * 0.07f;
+  SDL_FRect panel = {
+      .x = casing.x + panel_padding,
+      .y = casing.y + panel_padding,
+      .w = casing.w - panel_padding * 2.0f,
+      .h = casing.h - panel_padding * 2.0f,
+  };
+  SDL_SetRenderDrawColor(game->renderer, 90, 175, 220, 255);
+  SDL_RenderFillRect(game->renderer, &panel);
+
+  SDL_SetRenderDrawColor(game->renderer, 145, 215, 240, 255);
+  SDL_FRect highlight = {panel.x, panel.y, panel.w, cell.h * 0.055f};
+  SDL_RenderFillRect(game->renderer, &highlight);
+
+  float rivet_size = cell.w * 0.045f;
+  float rivet_inset = cell.w * 0.035f;
+  SDL_SetRenderDrawColor(game->renderer, 220, 235, 240, 255);
+  SDL_FRect rivets[] = {
+      {panel.x + rivet_inset, panel.y + rivet_inset, rivet_size, rivet_size},
+      {panel.x + panel.w - rivet_inset - rivet_size, panel.y + rivet_inset,
+       rivet_size, rivet_size},
+      {panel.x + rivet_inset, panel.y + panel.h - rivet_inset - rivet_size,
+       rivet_size, rivet_size},
+      {panel.x + panel.w - rivet_inset - rivet_size,
+       panel.y + panel.h - rivet_inset - rivet_size, rivet_size, rivet_size},
+  };
+  for (int i = 0; i < 4; i++) {
+    SDL_RenderFillRect(game->renderer, &rivets[i]);
+  }
+
+  SDL_SetRenderDrawColor(game->renderer, 40, 75, 95, 255);
+  draw_orientation_arrow(game->renderer, panel, input->orientation);
+}
+
 static void draw_pipe_layer(SDL_Renderer *renderer, GameplayState *state,
                             Pipe *pipe, float width) {
   float half_cell = state->cell_size * 0.5f;
@@ -528,12 +584,7 @@ static void gameplay_state_render(GameState *base, NumberFactory *game) {
         break;
       case ENTITY_INPUT: {
         Input *input = &entity->input;
-        SDL_SetRenderDrawColor(game->renderer, 80, 160, 220, 255);
-        SDL_RenderFillRect(game->renderer, &rect);
-        SDL_SetRenderDrawColor(game->renderer, 40, 80, 120, 255);
-        SDL_RenderRect(game->renderer, &rect);
-        SDL_SetRenderDrawColor(game->renderer, 255, 255, 255, 255);
-        draw_orientation_arrow(game->renderer, rect, input->orientation);
+        draw_input(game, rect, input);
         break;
       }
       }
