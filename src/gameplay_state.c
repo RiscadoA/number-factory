@@ -180,6 +180,12 @@ static void gameplay_state_destroy(GameState *base, NumberFactory *game) {
   free(state);
 }
 
+static void rotate_orientation(GameplayState *state, int steps) {
+  int orientation = state->orientation + steps % ORIENTATION_COUNT;
+  if (orientation < 0) orientation += ORIENTATION_COUNT;
+  state->orientation = (Orientation)(orientation % ORIENTATION_COUNT);
+}
+
 static SDL_AppResult gameplay_state_event(GameState *base, NumberFactory *game,
                                           SDL_Event *event) {
   (void)game;
@@ -187,8 +193,13 @@ static SDL_AppResult gameplay_state_event(GameState *base, NumberFactory *game,
 
   if (event->type == SDL_EVENT_KEY_DOWN && event->key.key == SDLK_R &&
       !event->key.repeat) {
-    state->orientation =
-        (Orientation)((state->orientation + 1) % ORIENTATION_COUNT);
+    rotate_orientation(state, 1);
+  }
+
+  if (event->type == SDL_EVENT_MOUSE_WHEEL) {
+    int steps = event->wheel.integer_y;
+    if (event->wheel.direction == SDL_MOUSEWHEEL_FLIPPED) steps = -steps;
+    rotate_orientation(state, steps);
   }
 
   if (event->type == SDL_EVENT_MOUSE_MOTION) {
