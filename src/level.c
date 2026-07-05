@@ -129,6 +129,9 @@ int level_place_pipe(Level *level, Vector2i pos, Orientation orientation) {
 
     // Check if there's a pipe entity at the neighbor position
     EntityId id = BOARD_AT(&level->board, position.x, position.y);
+    if (id == ENTITY_NONE) {
+      continue;
+    }
     Entity *ent = ENTITY_AT(&level->entity_pool, id);
     if (ent->type != ENTITY_PIPE) {
       continue;
