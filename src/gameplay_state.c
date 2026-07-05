@@ -41,6 +41,8 @@ typedef struct {
   TextTexture rotate_label;
   TextTexture pause_label;
   TextTexture health_label;
+  TextTexture health_value;
+  int rendered_health;
 } GameplayHud;
 
 typedef struct {
@@ -89,7 +91,7 @@ static void text_texture_free(TextTexture *text) {
 static int text_texture_init(TextTexture *text, NumberFactory *game,
                              TTF_Font *font, const char *value) {
   SDL_Color color = {.r = 40, .g = 30, .b = 40, .a = 255};
-  SDL_Surface *surface = TTF_RenderText_Blended(font, value, 0, color);
+  SDL_Surface *surface = TTF_RenderText_Solid(font, value, 0, color);
   if (!surface) return 0;
 
   text->texture = SDL_CreateTextureFromSurface(game->renderer, surface);
@@ -110,6 +112,7 @@ static void gameplay_hud_free(GameplayHud *hud) {
   text_texture_free(&hud->rotate_label);
   text_texture_free(&hud->pause_label);
   text_texture_free(&hud->health_label);
+  text_texture_free(&hud->health_value);
   if (hud->font) TTF_CloseFont(hud->font);
   hud->font = NULL;
 }
@@ -122,11 +125,13 @@ static int gameplay_hud_init(GameplayHud *hud, NumberFactory *game) {
       !text_texture_init(&hud->rotate_label, game, hud->font,
                          "R/WHEEL ROTATE") ||
       !text_texture_init(&hud->pause_label, game, hud->font, "ESC PAUSE") ||
-      !text_texture_init(&hud->health_label, game, hud->font, "HP")) {
+      !text_texture_init(&hud->health_label, game, hud->font, "HP") ||
+      !text_texture_init(&hud->health_value, game, hud->font, "100")) {
     SDL_Log("Failed to create gameplay HUD: %s", SDL_GetError());
     gameplay_hud_free(hud);
     return 0;
   }
+  hud->rendered_health = 100;
   return 1;
 }
 
@@ -141,18 +146,27 @@ static void gameplay_hud_draw_button(NumberFactory *game, TextTexture *label,
   SDL_SetRenderDrawColor(game->renderer, 40, 30, 40, 255);
   SDL_RenderRect(game->renderer, &bounds);
 
-  float scale = MIN(1.0f, MIN((bounds.w - 12.0f) / label->width,
-                              (bounds.h - 14.0f) / label->height));
   SDL_FRect destination = {
-      .x = bounds.x + (bounds.w - label->width * scale) / 2.0f,
-      .y = bounds.y + (bounds.h - label->height * scale) / 2.0f,
-      .w = label->width * scale,
-      .h = label->height * scale,
+      .x = (float)(int)(bounds.x + (bounds.w - label->width) / 2.0f + 0.5f),
+      .y = (float)(int)(bounds.y + (bounds.h - label->height) / 2.0f + 0.5f),
+      .w = label->width,
+      .h = label->height,
   };
   SDL_RenderTexture(game->renderer, label->texture, NULL, &destination);
 }
 
 static void gameplay_hud_render(GameplayState *state, NumberFactory *game) {
+  if (state->hud.rendered_health != state->level.health) {
+    char value[16];
+    snprintf(value, sizeof(value), "%d", state->level.health);
+    TextTexture texture = {0};
+    if (text_texture_init(&texture, game, state->hud.font, value)) {
+      text_texture_free(&state->hud.health_value);
+      state->hud.health_value = texture;
+      state->hud.rendered_health = state->level.health;
+    }
+  }
+
   SDL_SetRenderDrawColor(game->renderer, 40, 30, 40, 255);
   SDL_FRect background = {0.0f, 0.0f, state->viewport_width, HUD_HEIGHT};
   SDL_RenderFillRect(game->renderer, &background);
@@ -190,16 +204,25 @@ static void gameplay_hud_render(GameplayState *state, NumberFactory *game) {
   TextTexture *health_label = &state->hud.health_label;
   SDL_FRect label_destination = {
       .x = health_bar.x + 5.0f,
-      .y = health_bar.y + (health_bar.h - health_label->height) / 2.0f,
+      .y = (float)(int)(health_bar.y +
+                        (health_bar.h - health_label->height) / 2.0f + 0.5f),
       .w = health_label->width,
       .h = health_label->height,
   };
   SDL_RenderTexture(game->renderer, health_label->texture, NULL,
                     &label_destination);
-  SDL_FRect health_number = {health_bar.x + 29.0f, health_bar.y + 5.0f,
-                             health_bar.w - 34.0f, health_bar.h - 10.0f};
-  number_renderer_draw(&state->number_renderer, game->renderer,
-                       state->level.health, health_number);
+  TextTexture *health_value = &state->hud.health_value;
+  SDL_FRect value_destination = {
+      .x = (float)(int)(health_bar.x + 29.0f +
+                        (health_bar.w - 34.0f - health_value->width) / 2.0f +
+                        0.5f),
+      .y = (float)(int)(health_bar.y +
+                        (health_bar.h - health_value->height) / 2.0f + 0.5f),
+      .w = health_value->width,
+      .h = health_value->height,
+  };
+  SDL_RenderTexture(game->renderer, health_value->texture, NULL,
+                    &value_destination);
 }
 
 static void number_renderer_free(NumberRenderer *renderer) {
@@ -327,9 +350,9 @@ static void draw_orientation_arrow(SDL_Renderer *renderer, SDL_FRect cell,
   }
 }
 
-static void draw_item(NumberFactory *game, GameplayState *state, Vector2f pos,
-                      int value) {
-  float size = state->cell_size * 0.25f;
+static void draw_item_scaled(NumberFactory *game, GameplayState *state,
+                             Vector2f pos, int value, float scale) {
+  float size = state->cell_size * 0.25f * scale;
   float x = state->board_offset_x + pos.x * state->cell_size - size / 2.0f;
   float y = state->board_offset_y + pos.y * state->cell_size - size / 2.0f;
   SDL_FRect rect = {x, y, size, size};
@@ -338,6 +361,11 @@ static void draw_item(NumberFactory *game, GameplayState *state, Vector2f pos,
   SDL_SetRenderDrawColor(game->renderer, 0, 0, 0, 255);
   SDL_RenderRect(game->renderer, &rect);
   number_renderer_draw(&state->number_renderer, game->renderer, value, rect);
+}
+
+static void draw_item(NumberFactory *game, GameplayState *state, Vector2f pos,
+                      int value) {
+  draw_item_scaled(game, state, pos, value, 1.0f);
 }
 
 static void draw_pipe_half_segment(SDL_Renderer *renderer, float center_x,
@@ -763,7 +791,9 @@ static void gameplay_state_render(GameState *base, NumberFactory *game) {
   for (int i = 0; i < state->level.missed_item_count; i++) {
     MissedItem *item = &state->level.missed_items[i];
     Vector2f pos = level_missed_item_position(item);
-    draw_item(game, state, pos, item->value);
+    float t = MIN(1.0f, MAX(0.0f, item->progress));
+    float scale = 1.0f + 4.0f * t * (1.0f - t);
+    draw_item_scaled(game, state, pos, item->value, scale);
   }
 
   if (state->has_hovered_cell) {
