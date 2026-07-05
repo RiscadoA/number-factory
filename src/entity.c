@@ -27,7 +27,7 @@ void entity_pool_init(EntityPool *pool, int capacity) {
 }
 
 void entity_pool_free(EntityPool *pool) {
-  for (int i = 1; i <= pool->capacity; i++) {
+  for (int i = 0; i < pool->capacity; i++) {
     entity_free(&pool->buffer[i]);
   }
 
