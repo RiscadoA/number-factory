@@ -15,6 +15,13 @@ void splitter_init(Splitter *splitter, Vector2i position,
   }
 }
 
+void splitter_free(Splitter *splitter) {
+  item_deque_free(&splitter->input_items);
+  for (int i = 0; i < 4; i++) {
+    item_deque_free(&splitter->output_items[i]);
+  }
+}
+
 int splitter_add_item(Splitter *splitter, int value) {
   return items_add(&splitter->input_items,
                    (Item){.value = value,

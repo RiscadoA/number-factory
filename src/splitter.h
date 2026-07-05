@@ -15,6 +15,8 @@ typedef struct {
 void splitter_init(Splitter *splitter, Vector2i position,
                    Orientation orientation);
 
+void splitter_free(Splitter *splitter);
+
 int splitter_add_item(Splitter *splitter, int value);
 
 void splitter_update(Splitter *splitter,

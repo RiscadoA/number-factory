@@ -8,6 +8,15 @@ static void entity_free(Entity *entity) {
   case ENTITY_PIPE:
     pipe_free(&entity->pipe);
     break;
+  case ENTITY_SPLITTER:
+    splitter_free(&entity->splitter);
+    break;
+  case ENTITY_INPUT:
+    input_free(&entity->input);
+    break;
+  case ENTITY_OUTPUT:
+    output_free(&entity->output);
+    break;
   default:
     break;
   }

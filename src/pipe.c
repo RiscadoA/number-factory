@@ -225,6 +225,22 @@ Vector2f pipe_item_position(Pipe *pipe, int index) {
   return item_position(cell.pos, cell_p, item.source_orientation, cell.orientation);
 }
 
+void pipe_for_each_item_position(Pipe *pipe,
+                                  void (*callback)(void *user, int value,
+                                                   Vector2f position),
+                                  void *user) {
+  for (int i = 0; i < pipe->items.size; i++) {
+    Item item = DEQUE_AT(pipe->items, i);
+    int cell_i = (int)floorf(item.distance_from_start);
+    cell_i = MIN(cell_i, pipe->cells.size - 1);
+    float cell_p = item.distance_from_start - (float)cell_i;
+    PipeCell cell = DEQUE_AT(pipe->cells, cell_i);
+    callback(user, item.value,
+             item_position(cell.pos, cell_p, item.source_orientation,
+                           cell.orientation));
+  }
+}
+
 void pipe_debug(Pipe *pipe) {
   for (int i = 0; i < pipe->cells.size; ++i) {
     PipeCell cell = DEQUE_AT(pipe->cells, i);

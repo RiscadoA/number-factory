@@ -10,6 +10,10 @@ void output_init(Output *output, Vector2i position,
   output->received_count = 0;
 }
 
+void output_free(Output *output) {
+  (void)output;
+}
+
 int output_accept(Output *output, Orientation orientation, int value) {
   if (orientation != output->input_orientation ||
       value != output->target_value) {

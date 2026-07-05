@@ -836,19 +836,14 @@ static void gameplay_state_render(GameState *base, NumberFactory *game) {
         if (pipe_is_start_cell(pipe, (Vector2i){x, y}) != 1) break;
         if (pipe->cells.size == 0) break;
 
-        for (int i = 0; i < pipe->items.size; i++) {
-          Item item = DEQUE_AT(pipe->items, i);
-          Vector2f pos = pipe_item_position(pipe, i);
-          draw_item(game, state, pos, item.value);
-        }
+        DrawItemCallbackData data = {game, state};
+        pipe_for_each_item_position(pipe, draw_item_callback, &data);
         break;
       }
       case ENTITY_INPUT: {
         Input *input = &entity->input;
-        if (input->progress > 0.0f) {
-          Vector2f pos = input_item_position(input);
-          draw_item(game, state, pos, input->value);
-        }
+        DrawItemCallbackData data = {game, state};
+        input_for_each_item_position(input, draw_item_callback, &data);
         break;
       }
       case ENTITY_SPLITTER: {

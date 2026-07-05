@@ -60,6 +60,11 @@ int pipe_add_item(Pipe *pipe, Vector2i pos, Orientation source_orientation,
 
 Vector2f pipe_item_position(Pipe *pipe, int index);
 
+void pipe_for_each_item_position(Pipe *pipe,
+                                  void (*callback)(void *user, int value,
+                                                   Vector2f position),
+                                  void *user);
+
 void pipe_debug(Pipe *pipe);
 
 #endif

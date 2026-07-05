@@ -9,43 +9,43 @@ void input_init(Input *input, Vector2i position, Orientation orientation,
   input->value = value;
   input->time_per_value = time_per_value;
   input->time_accumulator = 0.0f;
-  input->progress = 0.0f;
+  item_deque_init(&input->items, 4);
+}
+
+void input_free(Input *input) { item_deque_free(&input->items); }
+
+Vector2i input_output_position(Input *input) {
+  return vector_add(input->position, orientation_vector(input->orientation));
 }
 
 int input_update(Input *input, int (*callback)(void *user, int value),
                  void *user, float dt) {
   input->time_accumulator += dt;
 
-  if (input->progress > 0.0f) {
-    // Multiplied by 2.0f as progress maps to half the usual distance
-    input->progress += dt * ITEM_SPEED * 2.0f;
-
-    if (input->progress >= 1.0f) {
-      if (callback(user, input->value)) {
-        input->progress = 0.0f;
-      } else {
-        input->progress = 0.0f;
-        return 1;
-      }
-    }
-    return 0;
-  }
+  items_update(&input->items, ITEM_GAP, callback, user, dt);
 
   if (input->time_accumulator >= input->time_per_value) {
     input->time_accumulator -= input->time_per_value;
-    input->progress = 0.00001f;
+    if (!items_add(&input->items,
+                   (Item){.value = input->value,
+                          .distance_from_start = ITEM_GAP,
+                          .source_orientation =
+                              orientation_opposite(input->orientation)})) {
+      return 1;
+    }
   }
   return 0;
 }
 
-Vector2i input_output_position(Input *input) {
-  return vector_add(input->position, orientation_vector(input->orientation));
-}
-
-Vector2f input_item_position(Input *input) {
-  Vector2f start = {input->position.x + 0.5f, input->position.y + 0.5f};
-  Vector2i output = input_output_position(input);
-  Vector2f end = {output.x + 0.5f, output.y + 0.5f};
-  Vector2f dir = vectorf_subtract(end, start);
-  return vectorf_add(start, vectorf_scale(dir, 0.5f * input->progress));
+void input_for_each_item_position(Input *input,
+                                  void (*callback)(void *user, int value,
+                                                   Vector2f position),
+                                  void *user) {
+  for (int i = 0; i < input->items.size; i++) {
+    Item item = DEQUE_AT(input->items, i);
+    callback(user, item.value,
+             item_position(input->position,
+                           1.0F - ITEM_GAP + item.distance_from_start,
+                           item.source_orientation, input->orientation));
+  }
 }
