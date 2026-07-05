@@ -1,6 +1,8 @@
 #include "gameplay_state.h"
 
 #include <SDL3/SDL.h>
+#include <SDL3_ttf/SDL_ttf.h>
+#include <stdio.h>
 #include <stdlib.h>
 
 #include "game.h"
@@ -8,9 +10,21 @@
 #include "level.h"
 #include "pipe.h"
 
+enum {
+  NUMBER_GLYPH_COUNT = 11,
+  NUMBER_MINUS_GLYPH = 10,
+};
+
+typedef struct {
+  SDL_Texture *textures[NUMBER_GLYPH_COUNT];
+  float widths[NUMBER_GLYPH_COUNT];
+  float heights[NUMBER_GLYPH_COUNT];
+} NumberRenderer;
+
 typedef struct {
   GameState base;
   Level level;
+  NumberRenderer number_renderer;
   float cell_size;
   float board_offset_x;
   float board_offset_y;
@@ -19,6 +33,85 @@ typedef struct {
   Orientation orientation;
   Uint64 last_ticks;
 } GameplayState;
+
+static void number_renderer_free(NumberRenderer *renderer) {
+  for (int i = 0; i < NUMBER_GLYPH_COUNT; i++) {
+    if (renderer->textures[i]) {
+      SDL_DestroyTexture(renderer->textures[i]);
+      renderer->textures[i] = NULL;
+    }
+  }
+}
+
+static int number_renderer_init(NumberRenderer *renderer, NumberFactory *game) {
+  SDL_Color color = {.r = 0, .g = 0, .b = 0, .a = 255};
+
+  for (int i = 0; i < NUMBER_GLYPH_COUNT; i++) {
+    char text[2] = {i == NUMBER_MINUS_GLYPH ? '-' : (char)('0' + i), '\0'};
+    SDL_Surface *surface = TTF_RenderText_Blended(game->font, text, 0, color);
+    if (!surface) {
+      SDL_Log("Failed to render number glyph '%c': %s", text[0],
+              SDL_GetError());
+      number_renderer_free(renderer);
+      return 0;
+    }
+
+    SDL_Texture *texture =
+        SDL_CreateTextureFromSurface(game->renderer, surface);
+    SDL_DestroySurface(surface);
+    if (!texture || !SDL_GetTextureSize(texture, &renderer->widths[i],
+                                        &renderer->heights[i])) {
+      SDL_Log("Failed to create number glyph '%c': %s", text[0],
+              SDL_GetError());
+      if (texture) SDL_DestroyTexture(texture);
+      number_renderer_free(renderer);
+      return 0;
+    }
+
+    SDL_SetTextureScaleMode(texture, SDL_SCALEMODE_NEAREST);
+    renderer->textures[i] = texture;
+  }
+
+  return 1;
+}
+
+static void number_renderer_draw(NumberRenderer *renderer,
+                                 SDL_Renderer *sdl_renderer, int value,
+                                 SDL_FRect bounds) {
+  char text[16];
+  int length = snprintf(text, sizeof(text), "%d", value);
+  if (length <= 0 || length >= (int)sizeof(text)) return;
+
+  float unscaled_width = 0.0f;
+  float unscaled_height = 0.0f;
+  for (int i = 0; i < length; i++) {
+    int glyph = text[i] == '-' ? NUMBER_MINUS_GLYPH : text[i] - '0';
+    unscaled_width += renderer->widths[glyph];
+    unscaled_height = MAX(unscaled_height, renderer->heights[glyph]);
+  }
+
+  float max_width = bounds.w * 0.75f;
+  float max_height = bounds.h * 0.65f;
+  float width_scale = max_width / unscaled_width;
+  float height_scale = max_height / unscaled_height;
+  float scale = MIN(width_scale, height_scale);
+  float x = bounds.x + (bounds.w - unscaled_width * scale) / 2.0f;
+
+  for (int i = 0; i < length; i++) {
+    int glyph = text[i] == '-' ? NUMBER_MINUS_GLYPH : text[i] - '0';
+    float width = renderer->widths[glyph] * scale;
+    float height = renderer->heights[glyph] * scale;
+    SDL_FRect destination = {
+        .x = x,
+        .y = bounds.y + (bounds.h - height) / 2.0f,
+        .w = width,
+        .h = height,
+    };
+    SDL_RenderTexture(sdl_renderer, renderer->textures[glyph], NULL,
+                      &destination);
+    x += width;
+  }
+}
 
 static int screen_to_board_cell(GameplayState *state, float x, float y,
                                 Vector2i *cell) {
@@ -68,7 +161,6 @@ static void draw_orientation_arrow(SDL_Renderer *renderer, SDL_FRect cell,
 
 static void draw_item(NumberFactory *game, GameplayState *state, Vector2f pos,
                       int value) {
-  (void)value;
   float size = state->cell_size * 0.25f;
   float x = state->board_offset_x + pos.x * state->cell_size - size / 2.0f;
   float y = state->board_offset_y + pos.y * state->cell_size - size / 2.0f;
@@ -77,11 +169,13 @@ static void draw_item(NumberFactory *game, GameplayState *state, Vector2f pos,
   SDL_RenderFillRect(game->renderer, &rect);
   SDL_SetRenderDrawColor(game->renderer, 0, 0, 0, 255);
   SDL_RenderRect(game->renderer, &rect);
+  number_renderer_draw(&state->number_renderer, game->renderer, value, rect);
 }
 
 static void gameplay_state_destroy(GameState *base, NumberFactory *game) {
   (void)game;
   GameplayState *state = (GameplayState *)base;
+  number_renderer_free(&state->number_renderer);
   level_free(&state->level);
   free(state);
 }
@@ -272,6 +366,10 @@ GameState *gameplay_state_create(NumberFactory *game) {
   state->base.render = gameplay_state_render;
 
   level_init(&state->level);
+  if (!number_renderer_init(&state->number_renderer, game)) {
+    gameplay_state_destroy(&state->base, game);
+    return NULL;
+  }
   state->orientation = NORTH;
   state->last_ticks = SDL_GetTicks();
   float cell_width = (float)GAME_WIDTH / state->level.board.width;
