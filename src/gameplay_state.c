@@ -374,6 +374,66 @@ static void draw_input(NumberFactory *game, SDL_FRect cell, Input *input) {
   draw_orientation_arrow(game->renderer, panel, input->orientation);
 }
 
+static void draw_output(NumberFactory *game, GameplayState *state,
+                        SDL_FRect cell, Output *output) {
+  float center_x = cell.x + cell.w / 2.0f;
+  float center_y = cell.y + cell.h / 2.0f;
+  Vector2i travel_direction = orientation_vector(output->input_orientation);
+  Vector2i inlet_direction = {-travel_direction.x, -travel_direction.y};
+
+  SDL_SetRenderDrawColor(game->renderer, 55, 40, 50, 255);
+  draw_pipe_half_segment(game->renderer, center_x, center_y, inlet_direction,
+                         cell.w * 0.5f, cell.w * 0.38f);
+  SDL_SetRenderDrawColor(game->renderer, 185, 175, 165, 255);
+  draw_pipe_half_segment(game->renderer, center_x, center_y, inlet_direction,
+                         cell.w * 0.5f, cell.w * 0.24f);
+
+  float casing_padding = cell.w * 0.14f;
+  SDL_FRect casing = {
+      .x = cell.x + casing_padding,
+      .y = cell.y + casing_padding,
+      .w = cell.w - casing_padding * 2.0f,
+      .h = cell.h - casing_padding * 2.0f,
+  };
+  SDL_SetRenderDrawColor(game->renderer, 55, 40, 50, 255);
+  SDL_RenderFillRect(game->renderer, &casing);
+
+  float panel_padding = cell.w * 0.07f;
+  SDL_FRect panel = {
+      .x = casing.x + panel_padding,
+      .y = casing.y + panel_padding,
+      .w = casing.w - panel_padding * 2.0f,
+      .h = casing.h - panel_padding * 2.0f,
+  };
+  SDL_SetRenderDrawColor(game->renderer, 205, 105, 95, 255);
+  SDL_RenderFillRect(game->renderer, &panel);
+
+  SDL_SetRenderDrawColor(game->renderer, 235, 150, 125, 255);
+  SDL_FRect highlight = {panel.x, panel.y, panel.w, cell.h * 0.055f};
+  SDL_RenderFillRect(game->renderer, &highlight);
+
+  float badge_size = cell.w * 0.3f;
+  SDL_FRect target_badge = {
+      .x = center_x - badge_size / 2.0f,
+      .y = center_y - badge_size / 2.0f,
+      .w = badge_size,
+      .h = badge_size,
+  };
+  number_renderer_draw(&state->number_renderer, game->renderer,
+                       output->target_value, target_badge);
+
+  float marker_size = cell.w * 0.055f;
+  float marker_distance = cell.w * 0.22f;
+  SDL_FRect direction_marker = {
+      .x = center_x - travel_direction.x * marker_distance - marker_size / 2.0f,
+      .y = center_y - travel_direction.y * marker_distance - marker_size / 2.0f,
+      .w = marker_size,
+      .h = marker_size,
+  };
+  SDL_SetRenderDrawColor(game->renderer, 255, 225, 205, 255);
+  SDL_RenderFillRect(game->renderer, &direction_marker);
+}
+
 static void draw_pipe_layer(SDL_Renderer *renderer, GameplayState *state,
                             Pipe *pipe, float width) {
   float half_cell = state->cell_size * 0.5f;
@@ -612,6 +672,11 @@ static void gameplay_state_render(GameState *base, NumberFactory *game) {
         draw_input(game, rect, input);
         break;
       }
+      case ENTITY_OUTPUT: {
+        Output *output = &entity->output;
+        draw_output(game, state, rect, output);
+        break;
+      }
       }
     }
   }
@@ -645,6 +710,8 @@ static void gameplay_state_render(GameState *base, NumberFactory *game) {
         break;
       }
       case ENTITY_NONE:
+        break;
+      case ENTITY_OUTPUT:
         break;
       }
     }

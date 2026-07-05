@@ -42,6 +42,7 @@ add_executable(jam
   src/entity.c
   src/pipe.c
   src/input.c
+  src/output.c
   src/splitter.c
 )
 

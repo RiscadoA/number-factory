@@ -3,6 +3,7 @@
 
 #include "pipe.h"
 #include "input.h"
+#include "output.h"
 
 typedef int EntityId;
 
@@ -11,6 +12,7 @@ typedef enum {
   ENTITY_NONE = -1,
   ENTITY_PIPE,
   ENTITY_INPUT,
+  ENTITY_OUTPUT,
 } EntityType;
 
 typedef struct {
@@ -18,6 +20,7 @@ typedef struct {
   union {
     Pipe pipe;
     Input input;
+    Output output;
   };
 } Entity;
 

@@ -2,6 +2,7 @@
 #include "board.h"
 #include "entity.h"
 #include "input.h"
+#include "output.h"
 #include "pipe.h"
 #include "utils.h"
 
@@ -19,6 +20,14 @@ void level_init(Level *level) {
                                                        .input = input,
                                                    });
   BOARD_AT(&level->board, input.position.x, input.position.y) = id;
+
+  Output output;
+  output_init(&output, (Vector2i){10, 4}, EAST, 5);
+  id = entity_create(&level->entity_pool, (Entity){
+                                              .type = ENTITY_OUTPUT,
+                                              .output = output,
+                                          });
+  BOARD_AT(&level->board, output.position.x, output.position.y) = id;
 }
 
 void level_free(Level *level) {
@@ -45,6 +54,8 @@ static int put_item_on(Level *level, Vector2i pos, Orientation orientation,
   }
   case ENTITY_INPUT:
     return 0;
+  case ENTITY_OUTPUT:
+    return output_accept(&ent->output, orientation, value);
   }
 }
 
@@ -80,6 +91,8 @@ void level_update(Level *level, float dt) {
       input_update(&ent->input, output_item_callback, &args, dt);
       break;
     }
+    case ENTITY_OUTPUT:
+      break;
     }
   }
 }
