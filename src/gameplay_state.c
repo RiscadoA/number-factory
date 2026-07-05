@@ -8,6 +8,7 @@
 #include "game.h"
 #include "input.h"
 #include "level.h"
+#include "pause_state.h"
 #include "pipe.h"
 
 enum {
@@ -38,6 +39,7 @@ typedef struct {
   TextTexture pipe_label;
   TextTexture filter_label;
   TextTexture rotate_label;
+  TextTexture pause_label;
 } GameplayHud;
 
 typedef struct {
@@ -101,17 +103,19 @@ static void gameplay_hud_free(GameplayHud *hud) {
   text_texture_free(&hud->pipe_label);
   text_texture_free(&hud->filter_label);
   text_texture_free(&hud->rotate_label);
+  text_texture_free(&hud->pause_label);
   if (hud->font) TTF_CloseFont(hud->font);
   hud->font = NULL;
 }
 
 static int gameplay_hud_init(GameplayHud *hud, NumberFactory *game) {
-  hud->font = TTF_OpenFont("assets/fonts/PressStart2P-Regular.ttf", 14.0f);
+  hud->font = TTF_OpenFont("assets/fonts/PressStart2P-Regular.ttf", 12.0f);
   if (!hud->font ||
       !text_texture_init(&hud->pipe_label, game, hud->font, "1 PIPE") ||
       !text_texture_init(&hud->filter_label, game, hud->font, "2 FILTER") ||
       !text_texture_init(&hud->rotate_label, game, hud->font,
-                         "R / WHEEL ROTATE")) {
+                         "R/WHEEL ROTATE") ||
+      !text_texture_init(&hud->pause_label, game, hud->font, "ESC PAUSE")) {
     SDL_Log("Failed to create gameplay HUD: %s", SDL_GetError());
     gameplay_hud_free(hud);
     return 0;
@@ -130,7 +134,7 @@ static void gameplay_hud_draw_button(NumberFactory *game, TextTexture *label,
   SDL_SetRenderDrawColor(game->renderer, 40, 30, 40, 255);
   SDL_RenderRect(game->renderer, &bounds);
 
-  float scale = MIN(1.0f, MIN((bounds.w - 20.0f) / label->width,
+  float scale = MIN(1.0f, MIN((bounds.w - 12.0f) / label->width,
                               (bounds.h - 14.0f) / label->height));
   SDL_FRect destination = {
       .x = bounds.x + (bounds.w - label->width * scale) / 2.0f,
@@ -146,14 +150,16 @@ static void gameplay_hud_render(GameplayState *state, NumberFactory *game) {
   SDL_FRect background = {0.0f, 0.0f, state->viewport_width, HUD_HEIGHT};
   SDL_RenderFillRect(game->renderer, &background);
 
-  SDL_FRect pipe_button = {8.0f, 6.0f, 110.0f, 32.0f};
-  SDL_FRect filter_button = {126.0f, 6.0f, 140.0f, 32.0f};
-  SDL_FRect rotate_hint = {274.0f, 6.0f, 250.0f, 32.0f};
+  SDL_FRect pipe_button = {8.0f, 6.0f, 84.0f, 32.0f};
+  SDL_FRect filter_button = {98.0f, 6.0f, 108.0f, 32.0f};
+  SDL_FRect rotate_hint = {212.0f, 6.0f, 180.0f, 32.0f};
+  SDL_FRect pause_hint = {398.0f, 6.0f, 120.0f, 32.0f};
   gameplay_hud_draw_button(game, &state->hud.pipe_label, pipe_button,
                            state->placement_mode == PLACEMENT_PIPE);
   gameplay_hud_draw_button(game, &state->hud.filter_label, filter_button,
                            state->placement_mode == PLACEMENT_FILTER);
   gameplay_hud_draw_button(game, &state->hud.rotate_label, rotate_hint, 0);
+  gameplay_hud_draw_button(game, &state->hud.pause_label, pause_hint, 0);
 }
 
 static void number_renderer_free(NumberRenderer *renderer) {
@@ -466,9 +472,20 @@ static void rotate_orientation(GameplayState *state, int steps) {
   state->orientation = (Orientation)(orientation % ORIENTATION_COUNT);
 }
 
+static SDL_AppResult pause_game(NumberFactory *game) {
+  GameState *pause = pause_state_create(game);
+  if (!pause) return SDL_APP_FAILURE;
+
+  if (!game_state_stack_push(&game->states, pause)) {
+    pause->destroy(pause, game);
+    SDL_Log("Failed to push pause state");
+    return SDL_APP_FAILURE;
+  }
+  return SDL_APP_CONTINUE;
+}
+
 static SDL_AppResult gameplay_state_event(GameState *base, NumberFactory *game,
                                           SDL_Event *event) {
-  (void)game;
   GameplayState *state = (GameplayState *)base;
 
   if (event->type == SDL_EVENT_KEY_DOWN && !event->key.repeat) {
@@ -484,6 +501,8 @@ static SDL_AppResult gameplay_state_event(GameState *base, NumberFactory *game,
     case SDLK_R:
       rotate_orientation(state, 1);
       break;
+    case SDLK_ESCAPE:
+      return pause_game(game);
     default:
       break;
     }
@@ -535,6 +554,12 @@ static SDL_AppResult gameplay_state_update(GameState *base,
 
   level_update(&state->level, dt);
   return SDL_APP_CONTINUE;
+}
+
+static void gameplay_state_resume(GameState *base, NumberFactory *game) {
+  (void)game;
+  GameplayState *state = (GameplayState *)base;
+  state->last_ticks = SDL_GetTicks();
 }
 
 static void gameplay_state_render(GameState *base, NumberFactory *game) {
@@ -655,6 +680,7 @@ GameState *gameplay_state_create(NumberFactory *game) {
   state->base.event = gameplay_state_event;
   state->base.update = gameplay_state_update;
   state->base.render = gameplay_state_render;
+  state->base.resume = gameplay_state_resume;
 
   level_init(&state->level);
   if (!number_renderer_init(&state->number_renderer, game)) {

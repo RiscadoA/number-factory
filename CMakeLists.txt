@@ -35,6 +35,7 @@ add_executable(jam
   src/game_state.c
   src/start_menu_state.c
   src/gameplay_state.c
+  src/pause_state.c
   src/utils.c
   src/level.c
   src/board.c

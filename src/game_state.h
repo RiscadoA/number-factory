@@ -12,6 +12,7 @@ struct GameState {
                          SDL_Event *event);
   SDL_AppResult (*update)(GameState *state, NumberFactory *game);
   void (*render)(GameState *state, NumberFactory *game);
+  void (*resume)(GameState *state, NumberFactory *game);
 };
 
 typedef struct {

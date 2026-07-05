@@ -37,6 +37,9 @@ void game_state_stack_pop(GameStateStack *stack, NumberFactory *game) {
 
   GameState *state = stack->items[--stack->count];
   state->destroy(state, game);
+
+  GameState *resumed = game_state_stack_top(stack);
+  if (resumed && resumed->resume) resumed->resume(resumed, game);
 }
 
 GameState *game_state_stack_top(GameStateStack *stack) {
